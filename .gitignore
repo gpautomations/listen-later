@@ -1,0 +1,34 @@
+# dependencies and build output
+node_modules/
+dist/
+dist-store/
+*.zip
+
+# personal, uncommitted build defaults (e.g. your own server address); see local.config.example.json
+local.config.json
+
+# test artifacts: audio, browser profiles, reports, screenshots
+test/audio/
+test/**/*.wav
+test/**/*.mp3
+test/.p*/
+test/.profile*/
+test/*.json
+test/*.log
+test/*.png
+screenshots/
+store/test-shots/
+
+# model weights and caches (downloaded at runtime, never committed)
+*.onnx
+*.onnx_data
+*.bin
+*.safetensors
+*.pt
+.cache/
+models/
+
+# eSpeak NG build scratch
+third_party/espeak-ng/work/
+
+.DS_Store

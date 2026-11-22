@@ -1,0 +1,20 @@
+import { chromium } from "playwright";
+import http from "node:http";
+import path from "node:path";
+// Server host the build was configured with (local.config.json "defaultServer"); mapped to a mock on 127.0.0.1.
+const TEST_HOST = process.env.LL_TEST_HOST || "my-computer.local";
+const EXT = path.resolve("dist");
+const server = http.createServer((q, s) => { s.writeHead(200, { "Content-Type": "application/json" }); s.end("[1,2,3]"); });
+await new Promise((r) => server.listen(7778, "127.0.0.1", r));
+const ctx = await chromium.launchPersistentContext("", { channel: "chromium", headless: true, args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, `--host-resolver-rules=MAP ${TEST_HOST.toLowerCase()} 127.0.0.1`] });
+const sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker"));
+const p = await ctx.newPage(); const errs = []; p.on("pageerror", (e) => errs.push(e.message)); p.on("console", (m) => m.type() === "error" && errs.push(m.text()));
+await p.goto(sw.url().replace("background.js", "options.html"));
+await p.waitForTimeout(500);
+const server0 = await p.inputValue("#server");
+await p.click("#test"); await p.waitForTimeout(1500);
+const testMsg = await p.textContent("#msg");
+await p.click("#save"); await p.waitForTimeout(800);
+console.log(JSON.stringify({ server0, testMsg, saveMsg: await p.textContent("#msg"), stored: await sw.evaluate(() => chrome.storage.local.get(null)), errs }));
+await p.screenshot({ path: "screenshots/v2-options-page.png" });
+await ctx.close(); server.close();

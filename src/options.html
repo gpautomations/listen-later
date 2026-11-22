@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Listen Later options</title>
+<style>
+  body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 560px; margin: 32px auto; padding: 0 16px; color: #1d1d1f; }
+  h1 { font-size: 20px; } h2 { font-size: 15px; margin-top: 28px; }
+  label { display: block; font-weight: 600; margin: 12px 0 4px; }
+  input[type=url], select { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; box-sizing: border-box; }
+  button { margin-top: 12px; padding: 8px 16px; border: 0; border-radius: 8px; background: #111; color: #fff; font-size: 14px; cursor: pointer; }
+  button.secondary { background: #eee; color: #111; }
+  .note { color: #666; font-size: 13px; }
+  a { color: #0b57d0; }
+  .about { margin-top: 32px; padding-top: 8px; border-top: 1px solid #eee; }
+  #msg { margin-top: 12px; font-size: 13px; }
+</style></head>
+<body>
+  <h1>Listen Later</h1>
+  <h2>Send to my phone</h2>
+  <p class="note">Optional. The phone button sends the article's title, link and text to <b>your own</b> Listen Later server, which turns it into a podcast episode in your private feed. Nothing is sent until you enter an address here, and it is only ever sent to that address. Chrome will ask you to allow access to it when you press Save.</p>
+  <label for="server">Server URL</label>
+  <input id="server" type="url" placeholder="http://my-computer.local:7778">
+  <div>
+    <button id="save">Save</button>
+    <button id="test" class="secondary">Test connection</button>
+    <button id="clear" class="secondary">Remove server</button>
+  </div>
+  <h2>Voice</h2>
+  <label for="quality">Quality</label>
+  <select id="quality">
+    <option value="high">High: full Kokoro model (326 MB, downloaded once). Recommended.</option>
+    <option value="fast">Fast: 92 MB version, slightly less clear</option>
+  </select>
+  <div id="msg"></div>
+  <section class="about">
+    <h2>About</h2>
+    <p>Listen Later is free software under GPL-3.0-or-later.</p>
+    <p class="note">
+      Version <span id="version"></span><br>
+      Source code: <a href="https://github.com/gpautomations/listen-later" target="_blank" rel="noopener">github.com/gpautomations/listen-later</a><br>
+      License: <a href="https://github.com/gpautomations/listen-later/blob/main/LICENSE" target="_blank" rel="noopener">LICENSE</a> (GNU GPL v3 or any later version; full text also in <a href="COPYING" target="_blank">COPYING</a> inside the extension)<br>
+      Third-party software and licenses: <a href="https://github.com/gpautomations/listen-later/blob/main/THIRD_PARTY.md" target="_blank" rel="noopener">THIRD_PARTY.md</a><br>
+      The voice is Kokoro-82M (Apache-2.0, hexgrad); phonemes come from eSpeak NG 1.52.0 (GPL-3.0-or-later).<br>
+      This program comes with ABSOLUTELY NO WARRANTY.
+    </p>
+  </section>
+  <script src="options.js"></script>
+</body></html>

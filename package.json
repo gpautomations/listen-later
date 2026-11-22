@@ -1,0 +1,29 @@
+{
+  "name": "listen-later",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Chrome extension that reads any article aloud with a local neural voice (Kokoro-82M) and highlights each word in place.",
+  "homepage": "https://github.com/gpautomations/listen-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gpautomations/listen-later.git"
+  },
+  "author": "Growth Process Automation <scott@gpautomations.com>",
+  "license": "GPL-3.0-or-later",
+  "type": "commonjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:store": "STORE=1 node build.mjs",
+    "build:all": "node build.mjs && STORE=1 node build.mjs",
+    "package": "python3 scripts/package.py dist listen-later-extension.zip listen-later-extension && python3 scripts/package.py dist-store store/listen-later-store-0.2.0.zip",
+    "build:espeak": "bash third_party/espeak-ng/build.sh"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1",
+    "@mozilla/readability": "0.6.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "playwright": "1.65.1"
+  }
+}

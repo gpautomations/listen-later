@@ -1,0 +1,6 @@
+/* Listen Later in-page highlight styles (only ll- prefixed classes; inert until playback starts). */
+.ll-w { border-radius: 3px; transition: background-color .08s linear; }
+html.ll-on .ll-w { cursor: pointer; }
+html.ll-on .ll-w:hover { background-color: rgba(120, 160, 255, .14); }
+.ll-w.ll-sent { background-color: rgba(255, 214, 10, .20); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.ll-w.ll-word { background-color: rgba(255, 190, 0, .70); color: inherit; box-shadow: 0 0 0 1px rgba(255, 190, 0, .70); }
