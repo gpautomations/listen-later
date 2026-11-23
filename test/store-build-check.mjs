@@ -3,17 +3,23 @@ import { chromium } from "playwright";
 import http from "node:http";
 import path from "node:path";
 import fs from "node:fs";
+import { requestActivate } from "./activate.mjs";
+import { extensionContextOptions } from "./browser.mjs";
 const EXT = path.resolve(process.env.EXT || "dist-store");
 const URL = process.env.URL || "https://en.wikipedia.org/wiki/Steam_engine";
 let hits = 0;
 const server = http.createServer((q, s) => { hits++; s.writeHead(202, { "Content-Type": "application/json" }); s.end("{}"); });
 await new Promise((r) => server.listen(7778, "127.0.0.1", r));
-const ctx = await chromium.launchPersistentContext(path.resolve("test/.p-high"), { channel: "chromium", headless: true, viewport: { width: 1280, height: 800 },
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, "--autoplay-policy=no-user-gesture-required"] });
+const ctx = await chromium.launchPersistentContext(path.resolve("test/.p-high"), extensionContextOptions(EXT, {
+  viewport: { width: 1280, height: 800 },
+}));
 const r = {};
 const sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker", { timeout: 15000 }));
 r.extensionLoaded = !!sw; r.extId = sw.url().split("/")[2];
-r.manifest = await sw.evaluate(() => { const m = chrome.runtime.getManifest(); return { version: m.version, permissions: m.permissions, host_permissions: m.host_permissions, optional_host_permissions: m.optional_host_permissions }; });
+r.manifest = await sw.evaluate(() => { const m = chrome.runtime.getManifest(); return { version: m.version, permissions: m.permissions, host_permissions: m.host_permissions, optional_host_permissions: m.optional_host_permissions, content_scripts: m.content_scripts || null, commands: Object.keys(m.commands || {}) }; });
+if (r.manifest.version !== "0.2.0") throw new Error("version changed");
+if (r.manifest.content_scripts) throw new Error("content_scripts must be omitted");
+for (const key of ["activeTab", "scripting", "contextMenus"]) if (!r.manifest.permissions.includes(key)) throw new Error("missing " + key);
 r.grantedOrigins = (await sw.evaluate(() => chrome.permissions.getAll())).origins;
 await sw.evaluate(() => chrome.storage.local.clear());
 // chrome://extensions error check (developer mode page lists manifest/runtime errors)
@@ -25,6 +31,17 @@ await ext.close();
 const page = await ctx.newPage();
 const errors = []; const allLogs = []; page.on("console", (m) => allLogs.push(m.type() + ": " + m.text())); page.on("console", (m) => m.type() === "error" && errors.push(m.text())); page.on("pageerror", (e) => errors.push(e.message));
 await page.goto(URL, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(2000);
+r.playerOnLoad = await page.locator("#listen-later-host").count();
+if (r.playerOnLoad) throw new Error("player injected before the user turned Listen Later on");
+r.activate = await requestActivate(sw, page);
+if (!r.activate?.ok) {
+  r.playbackSkipped = r.activate?.error || "activate failed";
+  console.log(JSON.stringify(r, null, 1));
+  fs.writeFileSync("store/test-shots/store-build-report.json", JSON.stringify(r, null, 1));
+  await ctx.close(); server.close();
+  process.exit(0);
+}
 const host = page.locator("#listen-later-host");
 await page.waitForFunction(() => document.querySelector("#listen-later-host")?.dataset.detected, null, { timeout: 30000 });
 r.detectedBlocks = +(await host.getAttribute("data-detected"));

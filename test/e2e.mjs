@@ -2,6 +2,8 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
+import { activateTab } from "./activate.mjs";
+import { extensionContextOptions } from "./browser.mjs";
 
 const EXT = path.resolve(process.env.EXT || "dist");
 const SHOTS = path.resolve("screenshots");
@@ -9,10 +11,9 @@ const PROFILE = path.resolve("test/.profile");
 const URLS = (process.env.URLS || "https://www.notion.com/blog/steam-steel-and-infinite-minds-ai").split(",");
 const LISTEN_SECS = +(process.env.LISTEN_SECS || 25);
 
-const ctx = await chromium.launchPersistentContext(PROFILE, {
-  channel: "chromium", headless: true, viewport: { width: 1360, height: 900 },
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, "--autoplay-policy=no-user-gesture-required"],
-});
+const ctx = await chromium.launchPersistentContext(PROFILE, extensionContextOptions(EXT, {
+  viewport: { width: 1360, height: 900 },
+}));
 let sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker"));
 console.log("extension id", sw.url().split("/")[2]);
 
@@ -25,6 +26,7 @@ for (const [n, url] of URLS.entries()) {
   const r = { url }; const tag = process.env.TAG || "";
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
+  await activateTab(sw, page);
   const host = page.locator("#listen-later-host");
   await page.waitForFunction(() => document.querySelector("#listen-later-host")?.dataset.detected, null, { timeout: 30000 });
   r.detectedBlocks = await host.getAttribute("data-detected");

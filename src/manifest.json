@@ -9,7 +9,7 @@
     "128": "icons/128.png"
   },
   "action": {
-    "default_title": "Listen Later: show/hide player",
+    "default_title": "Listen Later: listen to this page",
     "default_icon": {
       "16": "icons/16.png",
       "48": "icons/48.png"
@@ -20,28 +20,34 @@
   },
   "permissions": [
     "offscreen",
-    "storage"
+    "storage",
+    "activeTab",
+    "scripting",
+    "contextMenus",
+    "downloads"
   ],
+  "optional_permissions": [
+    "identity"
+  ],
+  "oauth2": {
+    "client_id": "REPLACE_ME.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/drive.file"
+    ]
+  },
   "host_permissions": [
     "https://huggingface.co/*",
     "https://*.hf.co/*",
     "https://*.huggingface.co/*"
   ],
-  "content_scripts": [
-    {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "css": [
-        "content.css"
-      ],
-      "run_at": "document_idle"
+  "commands": {
+    "listen-page": {
+      "suggested_key": {
+        "default": "Alt+Shift+L"
+      },
+      "description": "Listen to this page"
     }
-  ],
+  },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },

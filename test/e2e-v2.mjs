@@ -1,8 +1,12 @@
-// v2 E2E: quality modes, Send to my phone (mock Listen Later server), share link + #listen-later invite.
+// v2 E2E: quality modes and Send to my phone (mock Listen Later server).
+// The player is opt-in, so this activates the tab after load. That needs host access
+// (EXTRA_HOST_PERMISSIONS for the article origin). The share-link flow was removed.
 import { chromium } from "playwright";
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { activateTab } from "./activate.mjs";
+import { extensionContextOptions } from "./browser.mjs";
 // Server host the build was configured with (local.config.json "defaultServer"); mapped to a mock on 127.0.0.1.
 const TEST_HOST = process.env.LL_TEST_HOST || "my-computer.local";
 
@@ -29,11 +33,10 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((r) => server.listen(7778, "127.0.0.1", r));
 
-const ctx = await chromium.launchPersistentContext(PROFILE, {
-  channel: "chromium", headless: true, viewport: { width: 1280, height: 800 },
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, "--autoplay-policy=no-user-gesture-required",
-    `--host-resolver-rules=MAP ${TEST_HOST.toLowerCase()} 127.0.0.1`],
-});
+const ctx = await chromium.launchPersistentContext(PROFILE, extensionContextOptions(EXT, {
+  viewport: { width: 1280, height: 800 },
+  extraArgs: [`--host-resolver-rules=MAP ${TEST_HOST.toLowerCase()} 127.0.0.1`],
+}));
 await ctx.grantPermissions(["clipboard-read", "clipboard-write"]);
 const sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker"));
 await sw.evaluate(([q, h]) => chrome.storage.local.set({ quality: q, voice: "af_heart", speed: 1, serverUrl: `http://${h}:7778` }), [QUALITY, TEST_HOST]);
@@ -45,6 +48,8 @@ page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
 await page.goto(URL, { waitUntil: "domcontentloaded", timeout: 60000 });
 await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
+r.playerBeforeActivate = await page.locator("#listen-later-host").count();
+await activateTab(sw, page);
 const host = page.locator("#listen-later-host");
 const attr = (k) => host.getAttribute("data-" + k);
 await page.waitForFunction(() => document.querySelector("#listen-later-host")?.dataset.detected, null, { timeout: 30000 });
@@ -80,27 +85,11 @@ if (EXTRA) {
   r.sendFailToast = await attr("toast");
   await page.screenshot({ path: `${SHOTS}/${TAG}e-send-failed-toast.png` });
   await sw.evaluate((h) => chrome.storage.local.set({ serverUrl: `http://${h}:7778` }), TEST_HOST);
-  // Share listen link
   await host.locator("button.play").click(); // pause
-  await page.waitForTimeout(6500);
-  await host.locator("button.share").click();
-  await page.waitForTimeout(500);
-  r.shareText = await attr("share-text");
-  r.clipboard = await page.evaluate(() => navigator.clipboard.readText()).catch((e) => "clipboard read failed: " + e.message);
-  await page.screenshot({ path: `${SHOTS}/${TAG}f-share-copied.png` });
-  // open the shared link in a new tab -> invite + one-click play
-  const link = r.shareText.split("\n").pop();
-  const p2 = await ctx.newPage();
-  await p2.goto(link, { waitUntil: "domcontentloaded" });
-  await p2.waitForFunction(() => document.querySelector("#listen-later-host")?.dataset.invite, null, { timeout: 30000 });
-  await p2.waitForTimeout(1500);
-  await p2.screenshot({ path: `${SHOTS}/${TAG}g-shared-link-invite.png` });
-  const t0 = Date.now();
-  await p2.locator("#listen-later-host .invite .big").click();
-  await p2.waitForFunction(() => document.querySelector("#listen-later-host")?.dataset.firstAudioMs, null, { timeout: 120000 });
-  r.sharedLinkFirstAudioMs = +(await p2.locator("#listen-later-host").getAttribute("data-first-audio-ms"));
-  r.sharedLinkServerSawFragment = false; // fragments are never sent in HTTP requests (browser behaviour)
-  await p2.close();
+  await page.waitForTimeout(400);
+  r.saveLabel = await host.locator("button.save").getAttribute("aria-label");
+  r.shareButtonGone = (await host.locator("button.share").count()) === 0;
+  await page.screenshot({ path: `${SHOTS}/${TAG}f-save-button.png` });
 }
 r.extensionConsoleErrors = errors.filter((e) => /chrome-extension:|ListenLater|ll-w|offscreen/i.test(e));
 const st = await sw.evaluate(() => chrome.runtime.sendMessage({ target: "offscreen", type: "status" }));

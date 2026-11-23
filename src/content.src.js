@@ -1,5 +1,11 @@
 // Listen Later content script: finds the article, wraps its words in place, and drives a floating player.
+// Injected only after the user turns the page on (toolbar, menu, shortcut, or a site they pinned).
 import { Readability, isProbablyReaderable } from "@mozilla/readability";
+import { driveClientConfigured } from "./lib/drive-config.mjs";
+import { buildEpisodeHtml, bytesToBase64, concatFloat32, episodeFilename, float32FromBase64 } from "./lib/episode.mjs";
+import { encodeImageBlob, encodeImageSource, IMAGE_MIN_EDGE } from "./lib/images.mjs";
+import { qrSvg } from "./lib/qr.mjs";
+import { defaultSynthRate, encodePcm, estimateHtmlBytes, formatBytes, formatClock, remainingSeconds, speechSeconds } from "./lib/speech-audio.mjs";
 
 (() => {
   if (window.__listenLater) return;
@@ -114,7 +120,7 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
     prev: '<svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>',
     next: '<svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6zm10-12h2v12h-2z"/></svg>',
     phone: '<svg viewBox="0 0 24 24"><path d="M16 1H8a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm0 18H8V4h8v15zm-4 3a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>',
-    link: '<svg viewBox="0 0 24 24"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l3.5-3.5a1 1 0 1 1 1.4 1.4L12 13.4a1 1 0 0 1-1.4 0zM7.8 19.1a3.5 3.5 0 0 1-2.5-6l2.8-2.8 1.4 1.4-2.8 2.8a1.5 1.5 0 0 0 2.1 2.1l2.8-2.8 1.4 1.4-2.8 2.8a3.5 3.5 0 0 1-2.4 1.1zm8.1-5.4-1.4-1.4 2.8-2.8a1.5 1.5 0 0 0-2.1-2.1l-2.8 2.8-1.4-1.4 2.8-2.8a3.5 3.5 0 0 1 4.9 4.9z"/></svg>',
+    save: '<svg viewBox="0 0 24 24"><path d="M12 3a1 1 0 0 1 1 1v8.59l2.3-2.3a1 1 0 0 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.42L11 12.59V4a1 1 0 0 1 1-1zM5 19a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1z"/></svg>',
     gear: '<svg viewBox="0 0 24 24"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.6 7.6 0 0 0 1.7 1L11 21h4l.4-2.9a7.6 7.6 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>',
     close: '<svg viewBox="0 0 24 24"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>',
   };
@@ -133,6 +139,9 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
     button.play:hover { background: #ffd24d; color: #111; }
     button.follow { width: auto; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 12px; background: rgba(255,190,0,.18); color: #ffd24d; display: none; }
     button.follow.show { display: grid; }
+    button.always { width: auto; height: auto; grid-column: 1 / -1; justify-self: start; border-radius: 8px; padding: 6px 10px; font-size: 12px; background: rgba(255,255,255,.08); color: #eee; }
+    button.always:hover { background: rgba(255,255,255,.14); }
+    button:disabled { opacity: .45; cursor: default; }
     svg { width: 16px; height: 16px; fill: currentColor; }
     button.play svg { width: 18px; height: 18px; }
     .status { min-width: 86px; max-width: 150px; padding: 0 6px; font-size: 12px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
@@ -153,18 +162,44 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
     .toast.ok { border-color: rgba(80,200,120,.45); }
     .toast.err { border-color: rgba(255,90,90,.5); }
     .toast b { color: #fff; }
-    .invite { display: none; align-items: center; gap: 10px; }
-    .invite.show { display: flex; }
-    .invite .big { all: unset; cursor: pointer; background: #ffbe00; color: #111; font-weight: 600; border-radius: 999px; padding: 8px 14px; }
+    .savebox { display: none; min-width: 280px; max-width: 320px; }
+    .savebox.show { display: block; }
+    .savebox p { margin: 0 0 8px; font-size: 12.5px; color: #ddd; }
+    .savebox .save-title { font-size: 14px; color: #fff; font-weight: 600; }
+    .meter { height: 6px; background: rgba(255,255,255,.12); border-radius: 99px; overflow: hidden; margin: 0 0 8px; }
+    .meter > div { height: 100%; width: 0; background: #ffbe00; }
+    .save-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .savebox button.wide { width: auto; height: auto; border-radius: 8px; padding: 6px 10px; font-size: 12px; background: rgba(255,255,255,.08); color: #eee; }
+    .savebox button.wide:hover { background: rgba(255,255,255,.16); color: #fff; }
+    .savebox button.wide.go { background: #ffbe00; color: #111; }
+    .savebox button.wide.go:hover { background: #ffd24d; color: #111; }
+    .savebox button[hidden], .savebox p[hidden], .savebox div[hidden] { display: none; }
+    .save-link-row a { color: #ffbe00; }
+    .qr { background: #fff; border-radius: 8px; padding: 8px; margin: 0 0 8px; width: fit-content; }
+    .qr svg { display: block; width: 180px; height: 180px; }
   </style>
   <div class="wrap" role="region" aria-label="Listen Later player">
     <div class="card toast" role="status" aria-live="polite"></div>
-    <div class="card invite"><span>Shared with Listen Later.<br><span style="color:#aaa">Hear it read aloud, word by word.</span></span><button class="big">▶ Listen</button></div>
+    <div class="card savebox" role="dialog" aria-label="Save episode">
+      <p class="save-title">Save episode</p>
+      <p class="save-estimate"></p>
+      <div class="meter" hidden><div></div></div>
+      <p class="save-time"></p>
+      <p class="save-link-row" hidden><a class="save-link" target="_blank" rel="noopener noreferrer"></a></p>
+      <div class="qr" hidden></div>
+      <p class="save-phone" hidden></p>
+      <div class="save-actions">
+        <button class="wide go" type="button">Continue</button>
+        <button class="wide drive" type="button" hidden>Save to Google Drive</button>
+        <button class="wide stop" type="button">Cancel</button>
+      </div>
+    </div>
     <div class="card settings">
       <label for="ll-speed">Speed</label><select id="ll-speed" class="speed">${SPEEDS.map((s) => `<option value="${s}">${s}×</option>`).join("")}</select>
       <label for="ll-voice">Voice</label><select id="ll-voice" class="voice">${VOICES.map(([v, n]) => `<option value="${v}">${n}</option>`).join("")}</select>
       <label for="ll-quality">Quality</label><select id="ll-quality" class="quality"><option value="high">High (full model)</option><option value="fast">Fast (smaller download)</option></select>
       <div class="hint qhint">High uses the full Kokoro model (326 MB, downloaded once). Fast uses a 92 MB version that sounds slightly less clear.</div>
+      <button class="always" type="button" title="Show the player automatically whenever you visit this site.">Always show on this site</button>
     </div>
     <div class="pill">
       <button class="play" title="Play (Alt+Shift+P)" aria-label="Play">${I.play}</button>
@@ -174,7 +209,7 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
       <button class="follow" title="Scroll back to the voice">Follow</button>
       <div class="sep"></div>
       <button class="phone" title="Send to my phone (${__SERVER_LABEL__})" aria-label="Send to my phone">${I.phone}</button>
-      <button class="share" title="Copy a listen link to share" aria-label="Copy listen link">${I.link}</button>
+      <button class="save" title="Save episode: choose a folder and save a read-along page with the audio inside" aria-label="Save episode">${I.save}</button>
       <button class="gear" title="Speed, voice, quality" aria-label="Settings" aria-expanded="false">${I.gear}</button>
       <button class="close" title="Hide player" aria-label="Hide player">${I.close}</button>
     </div>
@@ -182,7 +217,10 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
   const $ = (s) => shadow.querySelector(s);
   shadow.querySelector(".speed").value = "1";
   const ui = { play: $(".play"), prev: $(".prev"), next: $(".next"), status: $(".status"), follow: $(".follow"), speed: $(".speed"), voice: $(".voice"), quality: $(".quality"),
-    close: $(".close"), phone: $(".phone"), share: $(".share"), gear: $(".gear"), settings: $(".settings"), toast: $(".toast"), invite: $(".invite"), inviteBtn: $(".invite .big") };
+    close: $(".close"), phone: $(".phone"), save: $(".save"), always: $(".always"), gear: $(".gear"), settings: $(".settings"), toast: $(".toast"),
+    savebox: $(".savebox"), saveTitle: $(".save-title"), saveEstimate: $(".save-estimate"), saveTime: $(".save-time"),
+    saveLinkRow: $(".save-link-row"), saveLink: $(".save-link"), saveQr: $(".qr"), savePhone: $(".save-phone"),
+    saveMeter: $(".meter"), saveFill: $(".meter > div"), saveGo: $(".savebox .go"), saveDrive: $(".savebox .drive"), saveStop: $(".savebox .stop") };
   const ICON_PLAY = I.play, ICON_PAUSE = I.pause, ICON_LOAD = I.load;
   let toastTimer = 0;
   function toast(html, kind = "ok", ms = 6000) {
@@ -195,7 +233,7 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
 
   // ---------- state ----------
   const S = {
-    article: null, units: null, sentences: null, prepared: false,
+    article: null, units: null, sentences: null, blockStarts: null, prepared: false, saving: false,
     cur: 0, playing: false, loading: false, epoch: 1, voice: "af_heart", speed: 1, quality: "high", follow: true,
     ctx: null, source: null, startAt: 0, times: null, activeWord: -1, activeSent: -1,
     cache: new Map(), metrics: { firstAudioMs: null, playClickedAt: 0, sentences: [] }, modelReady: false, raf: 0,
@@ -214,8 +252,9 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
     const t0 = performance.now();
     const art = detectArticle() || S.article;
     if (!art) { setStatus("No article found"); return false; }
+    S.article = art;
     const { units, blockStarts } = wrapBlocks(art.blocks);
-    S.units = units; S.sentences = buildSentences(units, blockStarts); S.prepared = true;
+    S.units = units; S.blockStarts = blockStarts; S.sentences = buildSentences(units, blockStarts); S.prepared = true;
     document.documentElement.classList.add("ll-on");
     setAttr("words", units.length); setAttr("sentences", S.sentences.length); setAttr("blocks", art.blocks.length);
     setAttr("prepare-ms", Math.round(performance.now() - t0));
@@ -347,7 +386,6 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
   function finish() { S.playing = false; stopSource(); setPlayIcon(); setStatus("Done"); clearHighlight(); S.cur = 0; }
 
   async function play() {
-    ui.invite.classList.remove("show");
     if (!prepare()) return;
     if (!S.ctx) { try { S.ctx = new AudioContext({ sampleRate: 24000, latencyHint: "playback" }); } catch (e) { S.ctx = new AudioContext(); } setAttr("ctx-rate", S.ctx.sampleRate); }
     if (S.ctx.state === "suspended") await S.ctx.resume();
@@ -378,7 +416,8 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
   ui.speed.onchange = () => { S.speed = +ui.speed.value; chrome.storage.local.set({ speed: S.speed }); if (S.prepared) regenerate(); };
   ui.quality.onchange = () => { S.quality = ui.quality.value; chrome.storage.local.set({ quality: S.quality }); S.modelReady = false; if (S.prepared) regenerate(); };
   ui.voice.onchange = () => { S.voice = ui.voice.value; chrome.storage.local.set({ voice: S.voice }); if (S.prepared) regenerate(); };
-  ui.close.onclick = () => { pause(); host.style.display = "none"; };
+  let userHid = false;
+  ui.close.onclick = () => { pause(); userHid = true; host.style.display = "none"; };
 
   // click any word (outside links) to jump to its sentence
   document.addEventListener("click", (e) => {
@@ -391,13 +430,49 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
   });
   window.addEventListener("keydown", (e) => { if (e.altKey && e.shiftKey && e.code === "KeyP" && host.style.display !== "none") { e.preventDefault(); S.playing ? pause() : play(); } });
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type === "toggle-player") {
-      if (host.style.display === "none") { if (!S.article) S.article = detectArticle(); host.style.display = "block"; } else { pause(); host.style.display = "none"; }
-    } else if (msg?.type === "progress") {
-      if (msg.stage === "download" && !S.modelReady) setStatus(`Downloading voice ${msg.pct}%`);
-      if (msg.stage === "ready") { setStatus("Voice ready"); setAttr("engine", `${msg.device}/${msg.dtype}`); }
+  function showPlayer() {
+    userHid = false;
+    if (!S.article) { try { S.article = detectArticle(); } catch (e) {} }
+    const wasHidden = host.style.display === "none";
+    host.style.display = "block";
+    if (wasHidden && !S.playing && !S.loading && !S.saving) {
+      if (S.article) setStatus(`Listen · ${Math.max(1, Math.round((S.article.chars || 0) / 900))} min`);
+      else setStatus("Listen");
     }
+    refreshAlways();
+  }
+  async function refreshAlways() {
+    try {
+      const r = await chrome.runtime.sendMessage({ type: "get-always-on", url: location.href });
+      const on = !!r?.enabled;
+      ui.always.textContent = on ? "Stop always showing on this site" : "Always show on this site";
+      ui.always.title = on
+        ? "The player shows by itself on this site. Click to turn that off."
+        : "Show the player automatically whenever you visit this site.";
+      setAttr("always-on", on);
+    } catch (e) {}
+  }
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === "ping") { sendResponse({ ok: true }); return false; }
+    if (msg?.type === "show-player") { showPlayer(); sendResponse({ ok: true }); return false; }
+    if (msg?.type === "toggle-player") {
+      if (host.style.display === "none") showPlayer(); else { pause(); userHid = true; host.style.display = "none"; }
+      sendResponse({ ok: true });
+      return false;
+    }
+    if (msg?.type === "always-on-changed") {
+      refreshAlways().then(() => {
+        if (host.style.display === "none") return;
+        toast(host.dataset.alwaysOn === "true" ? "The player will show by itself on this site." : "This site is back to click to listen.", "ok", 5000);
+      });
+      return false;
+    }
+    if (msg?.type === "progress") {
+      if (msg.stage === "download" && !S.modelReady) setStatus(`Downloading voice ${msg.pct}%`);
+      if (msg.stage === "ready") setAttr("engine", `${msg.device}/${msg.dtype}`);
+      if (msg.stage === "ready" && !S.saving) setStatus("Voice ready");
+    }
+    return false;
   });
 
   // ---------- send to phone (user's own Listen Later server) ----------
@@ -459,32 +534,390 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
   }
   ui.phone.onclick = sendToPhone;
 
-  // ---------- share listen link ----------
-  // Link = the ORIGINAL article URL + "#listen-later". Fragments never reach the site's server, nothing is hosted.
-  const SHARE_HASH = "#listen-later";
-  function shareLink() { return location.href.split("#")[0] + SHARE_HASH; }
-  async function copyText(text) {
-    try { await navigator.clipboard.writeText(text); return true; } catch (e) {
-      const ta = document.createElement("textarea"); ta.value = text; ta.style.cssText = "position:fixed;opacity:0;top:0;left:0"; shadow.appendChild(ta); ta.select();
-      let ok = false; try { ok = document.execCommand("copy"); } catch (e2) {} ta.remove(); return ok;
+  // ---------- save episode ----------
+  // Replaces the old "share listen link", which only copied the article URL plus #listen-later.
+  // Kokoro PCM is packed as Opus (about 26 kbps) inside one HTML file. WAV is the fallback.
+  let synthRate = defaultSynthRate(S.quality);
+  chrome.storage.local.get("synthWallPerAudio").then((v) => {
+    if (v.synthWallPerAudio > 0.05 && v.synthWallPerAudio < 30) synthRate = v.synthWallPerAudio;
+  });
+  function driveOn() {
+    try { return driveClientConfigured(chrome.runtime.getManifest().oauth2?.client_id); }
+    catch (e) { return false; }
+  }
+  function clearDriveLink() {
+    ui.saveLinkRow.hidden = true;
+    ui.saveLink.removeAttribute("href");
+    ui.saveLink.textContent = "";
+    ui.saveQr.hidden = true;
+    ui.saveQr.replaceChildren();
+    ui.savePhone.hidden = true;
+    ui.savePhone.textContent = "";
+    host.removeAttribute("data-save-url");
+  }
+  function hideSaveBox() {
+    ui.savebox.classList.remove("show");
+    ui.saveMeter.hidden = true;
+    clearDriveLink();
+  }
+  function showSaveBox() { ui.savebox.classList.add("show"); }
+  function driveFileUrl(up) {
+    const id = String(up?.id || "");
+    const fallback = /^[a-zA-Z0-9_-]+$/.test(id) ? `https://drive.google.com/file/d/${id}/view` : "";
+    const raw = String(up?.url || fallback);
+    try {
+      const u = new URL(raw);
+      if (u.protocol !== "https:") return "";
+      if (u.hostname !== "drive.google.com" && u.hostname !== "docs.google.com") return "";
+      return u.toString();
+    } catch (e) {
+      return "";
     }
   }
-  ui.share.onclick = async () => {
-    const title = norm((S.article || {}).title) || document.title;
-    const link = shareLink();
-    const text = `"${title}": listen along, word by word, with Listen Later.\n${link}`;
-    setAttr("share-text", text);
-    const ok = await copyText(text);
-    toast(ok ? `Copied a listen link.<br><span style="color:#aaa">Friends with Listen Later get the player ready to go; everyone else just gets the article.</span>` : `Couldn't copy. Here's the link:<br>${esc(link)}`, ok ? "ok" : "err", 7000);
-  };
-  function handleShareHash() {
-    if (!location.hash.startsWith(SHARE_HASH)) return;
-    host.style.display = "block"; ui.invite.classList.add("show"); setAttr("invite", true);
-    // warm up the voice so playback starts quickly after the click
-    send({ type: "load", quality: S.quality }).catch(() => {});
+  function showDriveLink(up) {
+    const url = driveFileUrl(up);
+    if (!url) return;
+    ui.saveLink.href = url;
+    ui.saveLink.textContent = "Open in Google Drive";
+    ui.saveLinkRow.hidden = false;
+    try {
+      ui.saveQr.innerHTML = qrSvg(url);
+      ui.saveQr.hidden = false;
+    } catch (e) {
+      ui.saveQr.hidden = true;
+    }
+    ui.savePhone.hidden = false;
+    ui.savePhone.textContent = "Scan the code to open this file on your phone. Sign in to the same Google account. The file stays private. Google Drive's preview and the iPhone Files preview (Quick Look) do not play the page. Download the file, then open it in Safari or Chrome.";
+    setAttr("save-url", url);
   }
-  ui.inviteBtn.onclick = () => { ui.invite.classList.remove("show"); play(); };
-  window.addEventListener("hashchange", handleShareHash);
+  function articleOrder(art) {
+    const root = art?.root && art.root.nodeType === 1 ? art.root : document.body;
+    const images = [...root.querySelectorAll("img")].filter((img) => !img.closest("#listen-later-host"));
+    const nodes = [
+      ...(art?.blocks || []).map((el, index) => ({ el, kind: "text", index })),
+      ...images.map((el) => ({ el, kind: "image" })),
+    ];
+    nodes.sort((a, b) => {
+      if (a.el === b.el) return 0;
+      if (a.el.contains(b.el)) return -1;
+      if (b.el.contains(a.el)) return 1;
+      const pos = a.el.compareDocumentPosition(b.el);
+      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      return 0;
+    });
+    return nodes;
+  }
+  async function embedPageImage(img) {
+    try {
+      if (!img.complete || !img.naturalWidth) await img.decode();
+    } catch (e) { /* the fetch path below may still work */ }
+    const w = img.naturalWidth || 0;
+    const h = img.naturalHeight || 0;
+    if (w && h && (w < IMAGE_MIN_EDGE || h < IMAGE_MIN_EDGE)) return null;
+    const alt = (img.getAttribute("alt") || "").trim().slice(0, 300);
+    if (w && h) {
+      try { return { el: img, alt, ...(await encodeImageSource(img)) }; }
+      catch (e) { /* cross-origin picture: try a CORS fetch */ }
+    }
+    const src = img.currentSrc || img.src;
+    if (!src) return null;
+    try {
+      const res = await fetch(src, { credentials: "omit", mode: "cors" });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      if (blob.type && !blob.type.startsWith("image/")) return null;
+      const encoded = await encodeImageBlob(blob);
+      if (encoded.width < IMAGE_MIN_EDGE || encoded.height < IMAGE_MIN_EDGE) return null;
+      return { el: img, alt, ...encoded };
+    } catch (e2) {
+      return null;
+    }
+  }
+  function paintProgress(doneSentences, totalSentences, elapsed, audioDone, audioTotal) {
+    const pct = totalSentences ? Math.round((doneSentences / totalSentences) * 100) : 0;
+    ui.saveFill.style.width = pct + "%";
+    ui.saveMeter.hidden = false;
+    const left = remainingSeconds(elapsed, audioDone, audioTotal, synthRate);
+    ui.saveTime.textContent = `Elapsed ${formatClock(elapsed)}. About ${formatClock(left)} left.`;
+    setAttr("save-elapsed", elapsed.toFixed(1));
+    setAttr("save-left", left.toFixed(1));
+    setAttr("save-pct", pct);
+  }
+  function setSaveLocked(locked) {
+    S.saving = locked;
+    ui.save.disabled = locked;
+    ui.play.disabled = locked;
+    ui.prev.disabled = locked;
+    ui.next.disabled = locked;
+  }
+  function paintEstimate(speech) {
+    const fileBytes = estimateHtmlBytes(speech, S.article?.chars || 0, S.imageBytes || 0);
+    const rate = synthRate || defaultSynthRate(S.quality);
+    const counted = host.dataset.saveImages != null;
+    const pictures = !counted
+      ? " Counting pictures."
+      : (Number(host.dataset.saveImages) > 0 ? ` Including ${formatBytes(S.imageBytes)} of pictures.` : "");
+    ui.saveEstimate.textContent = `About ${formatClock(speech)} of audio. Creating it takes about ${formatClock(speech * rate)} on this computer. File about ${formatBytes(fileBytes)}.${pictures} The estimate updates after the first sentence.`;
+    setAttr("save-bytes-est", fileBytes);
+    return fileBytes;
+  }
+  function openSaveDialog() {
+    if (S.saving) return;
+    if (!prepare() || !S.sentences?.length) { toast("No article found on this page.", "err"); return; }
+    const words = S.units.length;
+    const speech = speechSeconds(words, S.speed || 1);
+    S.articleOrder = articleOrder(S.article);
+    S.figures = [];
+    S.imageBytes = 0;
+    const token = (S.imageToken = (S.imageToken || 0) + 1);
+    host.removeAttribute("data-save-images");
+    host.removeAttribute("data-save-image-bytes");
+    clearDriveLink();
+    ui.saveTitle.textContent = "Save episode";
+    ui.saveTime.textContent = S.modelReady ? "" : "The first time also downloads the voice model.";
+    ui.saveGo.hidden = false;
+    ui.saveDrive.hidden = !driveOn();
+    ui.saveGo.disabled = true;
+    ui.saveDrive.disabled = true;
+    ui.saveStop.textContent = "Cancel";
+    ui.saveMeter.hidden = true;
+    ui.saveFill.style.width = "0";
+    paintEstimate(speech);
+    showSaveBox();
+    setAttr("save-phase", "confirm");
+    setAttr("save-speech-sec", speech.toFixed(1));
+    S.imageJob = (async () => {
+      const seen = new Set();
+      const figures = [];
+      let bytes = 0;
+      for (const node of S.articleOrder) {
+        if (node.kind !== "image" || seen.has(node.el)) continue;
+        seen.add(node.el);
+        if (token !== S.imageToken) return;
+        const fig = await embedPageImage(node.el);
+        if (!fig) continue;
+        figures.push(fig);
+        bytes += fig.bytes;
+      }
+      if (token !== S.imageToken) return;
+      S.figures = figures;
+      S.imageBytes = bytes;
+      setAttr("save-images", figures.length);
+      setAttr("save-image-bytes", bytes);
+      if (host.dataset.savePhase === "confirm") paintEstimate(speech);
+    })().catch(() => {
+      if (token !== S.imageToken) return;
+      setAttr("save-images", S.figures?.length || 0);
+      setAttr("save-image-bytes", S.imageBytes || 0);
+    }).finally(() => {
+      if (token !== S.imageToken) return;
+      ui.saveGo.disabled = false;
+      ui.saveDrive.disabled = false;
+    });
+  }
+  async function chooseSaveFile(filename) {
+    if (typeof window.showSaveFilePicker !== "function") return { download: true };
+    try {
+      const handle = await window.showSaveFilePicker({
+        id: "listen-later-episode",
+        startIn: "downloads",
+        suggestedName: filename,
+        types: [{ description: "Listen Later episode", accept: { "text/html": [".html"] } }],
+      });
+      return { handle };
+    } catch (e) {
+      if (e?.name === "AbortError") return { cancelled: true };
+      return { download: true };
+    }
+  }
+  async function writeEpisode(plan, filename, html) {
+    if (plan.handle) {
+      const writable = await plan.handle.createWritable();
+      await writable.write(new Blob([html], { type: "text/html" }));
+      await writable.close();
+      return { where: "Saved in the folder you chose." };
+    }
+    const r = await chrome.runtime.sendMessage({ type: "download-episode", filename, html });
+    if (!r?.ok) throw new Error(r?.error || "Chrome could not ask where to save the file.");
+    return { where: "Chrome asked where to save it." };
+  }
+  function waitForDrive() {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { chrome.runtime.onMessage.removeListener(onMsg); resolve(false); }, 180000);
+      function onMsg(msg) {
+        if (msg?.type !== "drive-ready" && msg?.type !== "drive-denied") return;
+        clearTimeout(timer);
+        chrome.runtime.onMessage.removeListener(onMsg);
+        resolve(msg.type === "drive-ready");
+      }
+      chrome.runtime.onMessage.addListener(onMsg);
+    });
+  }
+  async function saveEpisode(destination) {
+    if (S.saving) return;
+    const title = norm(S.article?.title) || document.title || "Article";
+    const filename = episodeFilename(title);
+    const plan = destination === "drive" ? { drive: true } : await chooseSaveFile(filename);
+    if (plan.cancelled) { setAttr("save-phase", "cancelled"); hideSaveBox(); return; }
+    if (plan.drive) {
+      const ready = await chrome.runtime.sendMessage({ type: "drive-has-token" });
+      if (!ready?.ok) {
+        await chrome.runtime.sendMessage({ type: "open-drive-auth" });
+        ui.saveTime.textContent = "Allow Google Drive in the tab Chrome just opened, then this will continue.";
+        const ok = await waitForDrive();
+        if (!ok) { toast("Google Drive was not connected.", "err"); setAttr("save-phase", "cancelled"); return; }
+      }
+    }
+    if (S.playing) await pause();
+    setSaveLocked(true);
+    S.cancelSave = false;
+    S.epoch++;
+    const epoch = S.epoch;
+    send({ type: "epoch", epoch }).catch(() => {});
+    ui.saveGo.hidden = true;
+    ui.saveDrive.hidden = true;
+    ui.saveStop.textContent = "Cancel";
+    ui.saveTitle.textContent = "Creating audio";
+    showSaveBox();
+    setAttr("save-phase", "running");
+    const started = performance.now();
+    const speechEst = speechSeconds(S.units.length, S.speed || 1);
+    const timer = setInterval(() => {
+      if (!S.saving) return;
+      paintProgress(Number(host.dataset.saveSentences || 0), S.sentences.length, (performance.now() - started) / 1000, Number(host.dataset.saveAudio || 0), speechEst);
+    }, 500);
+    try {
+      const chunks = [];
+      const blocks = [];
+      let cur = [];
+      const starts = new Set(S.blockStarts || [0]);
+      let samples = 0;
+      let sampleRate = 24000;
+      for (let s = 0; s < S.sentences.length; s++) {
+        if (S.cancelSave || epoch !== S.epoch) { setAttr("save-phase", "cancelled"); toast("Save cancelled.", "err"); hideSaveBox(); return; }
+        setStatus(`Saving ${s + 1}/${S.sentences.length}`);
+        setAttr("save", `${s + 1}/${S.sentences.length}`);
+        ui.saveEstimate.textContent = `Sentence ${s + 1} of ${S.sentences.length}.`;
+        const words = S.sentences[s].map((u) => S.units[u].text);
+        const r = await send({ type: "synth", words, voice: S.voice, speed: S.speed, quality: S.quality, epoch });
+        if (S.cancelSave || epoch !== S.epoch || r?.stale) { setAttr("save-phase", "cancelled"); toast("Save cancelled.", "err"); hideSaveBox(); return; }
+        if (!r?.ok) throw new Error(r?.error || "voice failed");
+        const audio = float32FromBase64(r.f32);
+        if (chunks.length && r.sampleRate !== sampleRate) throw new Error("sample rate changed");
+        sampleRate = r.sampleRate;
+        const t0 = samples / sampleRate;
+        S.sentences[s].forEach((uiIdx, i) => {
+          if (starts.has(uiIdx) && cur.length) { blocks.push(cur); cur = []; }
+          const span = r.times[i] || [0, 0];
+          cur.push({ text: S.units[uiIdx].text, start: span[0] + t0, end: span[1] + t0 });
+        });
+        chunks.push(audio);
+        samples += audio.length;
+        S.modelReady = true;
+        const audioDone = samples / sampleRate;
+        const elapsed = (performance.now() - started) / 1000;
+        if (s === 0 && audioDone > 0.05) {
+          synthRate = elapsed / audioDone;
+          ui.saveTime.textContent = `Updated after the first sentence: about ${formatClock(remainingSeconds(elapsed, audioDone, speechEst, synthRate))} left.`;
+        }
+        setAttr("save-sentences", s + 1);
+        setAttr("save-audio", audioDone.toFixed(2));
+        paintProgress(s + 1, S.sentences.length, elapsed, audioDone, Math.max(speechEst, audioDone));
+      }
+      if (cur.length) blocks.push(cur);
+      if (S.cancelSave) { setAttr("save-phase", "cancelled"); toast("Save cancelled.", "err"); hideSaveBox(); return; }
+      const wall = (performance.now() - started) / 1000;
+      const audioSec = samples / sampleRate;
+      if (audioSec > 0.2) {
+        synthRate = wall / audioSec;
+        chrome.storage.local.set({ synthWallPerAudio: synthRate }).catch(() => {});
+      }
+      ui.saveEstimate.textContent = "Packing the audio.";
+      setStatus("Packing audio");
+      const encoded = await encodePcm(concatFloat32(chunks), sampleRate, { shouldCancel: () => S.cancelSave || epoch !== S.epoch });
+      const voiceLabel = VOICES.find(([id]) => id === S.voice)?.[1] || S.voice;
+      if (S.imageJob) await S.imageJob;
+      const byEl = new Map((S.figures || []).map((fig) => [fig.el, fig]));
+      const parts = [];
+      for (const node of S.articleOrder || []) {
+        if (node.kind === "text") {
+          const words = blocks[node.index] || [];
+          if (words.length) parts.push({ type: "words", words });
+        } else {
+          const fig = byEl.get(node.el);
+          if (fig) parts.push({ type: "image", src: fig.dataUrl, alt: fig.alt });
+        }
+      }
+      const html = buildEpisodeHtml({
+        title,
+        sourceUrl: location.href.split("#")[0],
+        parts,
+        audioBase64: bytesToBase64(encoded.bytes),
+        audioMime: encoded.mime,
+        codecLabel: encoded.label,
+        voiceLabel,
+        durationSec: audioSec,
+      });
+      const htmlBytes = new TextEncoder().encode(html).length;
+      let where = "";
+      let uploaded = null;
+      if (plan.drive) {
+        const up = await chrome.runtime.sendMessage({ type: "upload-episode", filename, html });
+        if (!up?.ok) throw new Error(up?.error || "Google Drive upload failed");
+        uploaded = up;
+        where = "Saved to your Google Drive, in the Listen Later folder.";
+      } else {
+        const wrote = await writeEpisode(plan, filename, html);
+        where = wrote.where;
+      }
+      ui.saveFill.style.width = "100%";
+      ui.saveTitle.textContent = "Saved";
+      ui.saveEstimate.textContent = `${filename} (${formatBytes(htmlBytes)}).`;
+      ui.saveTime.textContent = where + " Open the HTML file anytime, even offline.";
+      if (uploaded) showDriveLink(uploaded);
+      ui.saveStop.textContent = "Close";
+      setAttr("save-phase", "done");
+      setAttr("saved", filename);
+      setAttr("save-bytes", htmlBytes);
+      setAttr("save-codec", encoded.codec);
+      setStatus("Saved");
+    } catch (e) {
+      if (e?.name === "AbortError" || S.cancelSave) {
+        setAttr("save-phase", "cancelled");
+        toast("Save cancelled.", "err");
+        hideSaveBox();
+        return;
+      }
+      console.warn("[ListenLater] save failed", e);
+      toast("Couldn't save: " + esc(e.message || e), "err", 10000);
+      setStatus("Save failed");
+      setAttr("save-phase", "failed");
+      hideSaveBox();
+    } finally {
+      clearInterval(timer);
+      setSaveLocked(false);
+    }
+  }
+  ui.save.onclick = () => { openSaveDialog(); };
+  ui.saveGo.onclick = () => { saveEpisode("file"); };
+  ui.saveDrive.onclick = () => { saveEpisode("drive"); };
+  ui.saveStop.onclick = () => {
+    if (!S.saving) { setAttr("save-phase", host.dataset.savePhase === "done" ? "done" : "cancelled"); hideSaveBox(); return; }
+    S.cancelSave = true;
+    S.epoch++;
+    send({ type: "epoch", epoch: S.epoch }).catch(() => {});
+    ui.saveStop.textContent = "Cancelling";
+  };
+  ui.always.onclick = async () => {
+    if (host.dataset.alwaysOn === "true") {
+      await chrome.runtime.sendMessage({ type: "set-always-on", url: location.href, enabled: false });
+      return;
+    }
+    const r = await chrome.runtime.sendMessage({ type: "prompt-always-on", url: location.href });
+    if (!r?.ok) toast("Couldn't ask Chrome to allow this site: " + esc(r?.error || "unknown error"), "err", 8000);
+    else toast("Confirm this site in the tab Chrome just opened.", "ok", 8000);
+  };
 
   // ---------- boot ----------
   chrome.storage.local.get(["voice", "speed", "quality"]).then((v) => {
@@ -499,16 +932,23 @@ import { Readability, isProbablyReaderable } from "@mozilla/readability";
       if (!isProbablyReaderable(document, { minContentLength: 140, minScore: 20 })) return false;
       const art = detectArticle();
       if (!art || art.blocks.length < 3) return false;
-      S.article = art; host.style.display = "block"; handleShareHash();
-      setStatus(`Listen · ${Math.max(1, Math.round(art.chars / 900))} min`);
+      S.article = art;
+      if (userHid) return true;
+      host.style.display = "block";
+      if (!S.playing && !S.saving) setStatus(`Listen · ${Math.max(1, Math.round(art.chars / 900))} min`);
       setAttr("detected", art.blocks.length);
+      refreshAlways();
       return true;
     } catch (e) { console.warn("[ListenLater] detect failed", e); return false; }
   };
-  // SPA/hydrated pages may render late: try a few times
+  // SPA/hydrated pages may render late: try a few times. The player stays hidden until this
+  // script is injected, which only happens after the user turns the page on.
   let tries = 0; const iv = setInterval(() => {
     if (boot()) return clearInterval(iv);
-    if (++tries > 5) { clearInterval(iv); handleShareHash(); } // shared link on a page we couldn't classify: still offer the player
+    if (++tries > 5) {
+      clearInterval(iv);
+      if (!S.article && host.style.display !== "none") setStatus("No article found");
+    }
   }, 1200);
   if (boot()) clearInterval(iv);
 })();

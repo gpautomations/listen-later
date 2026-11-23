@@ -10,6 +10,53 @@ chrome.storage.local.get(["serverUrl", "quality"]).then((v) => {
   $("server").value = v.serverUrl || DEFAULT_SERVER;
   $("quality").value = v.quality || "high";
 });
+async function renderSites() {
+  const { alwaysOnSites = [] } = await chrome.storage.local.get("alwaysOnSites");
+  const ul = $("sites");
+  ul.replaceChildren();
+  if (!alwaysOnSites.length) {
+    const li = document.createElement("li");
+    li.className = "note";
+    li.textContent = "No sites yet. Listen Later stays off until you turn it on.";
+    ul.appendChild(li);
+    return;
+  }
+  for (const origin of alwaysOnSites) {
+    const li = document.createElement("li");
+    li.append(document.createTextNode(origin));
+    const b = document.createElement("button");
+    b.className = "secondary inline";
+    b.textContent = "Remove";
+    b.onclick = async () => {
+      const r = await chrome.runtime.sendMessage({ type: "set-always-on", origin, enabled: false });
+      msg(r?.ok ? "Removed " + origin + "." : (r?.error || "Could not remove that site."), !!r?.ok);
+      renderSites();
+    };
+    li.appendChild(b);
+    ul.appendChild(li);
+  }
+}
+renderSites();
+window.addEventListener("focus", renderSites);
+$("add-site").onclick = async () => {
+  const raw = $("site").value.trim();
+  if (!raw) return msg("Enter a site address, for example https://en.wikipedia.org.", false);
+  let origin;
+  try {
+    const u = new URL(raw);
+    if (!/^https?:$/.test(u.protocol)) throw new Error("use an http:// or https:// address");
+    let host = u.hostname;
+    if (host.includes(":") && !host.startsWith("[")) host = `[${host}]`;
+    origin = `${u.protocol}//${host}`;
+  } catch (e) { return msg("That doesn't look like a site address (" + e.message + ").", false); }
+  const granted = await chrome.permissions.request({ origins: [origin + "/*"] }).catch(() => false);
+  if (!granted) return msg("Chrome didn't allow " + origin + ".", false);
+  const r = await chrome.runtime.sendMessage({ type: "set-always-on", origin, enabled: true });
+  if (!r?.ok) return msg(r?.error || "Couldn't turn that on.", false);
+  $("site").value = "";
+  msg("Always showing on " + origin + ".");
+  renderSites();
+};
 // Match patterns cover all ports on a host.
 function originPattern(url) { const u = new URL(url); return `${u.protocol}//${u.hostname}/*`; }
 function readUrl() {
