@@ -23,6 +23,105 @@ async function getServer() {
 }
 const originPattern = (url) => { const u = new URL(url); return `${u.protocol}//${u.hostname}/*`; };
 
+function safeDownloadName(name) {
+  const base = String(name || "listen-later-article.html").split(/[/\\]/).pop().replace(/[^\w.\- ]+/g, "").trim();
+  const file = base || "listen-later-article.html";
+  return file.toLowerCase().endsWith(".html") ? file : file + ".html";
+}
+
+async function downloadEpisode(filename, html) {
+  const bytes = new TextEncoder().encode(html);
+  const blob = new Blob([bytes], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const id = await chrome.downloads.download({
+      url,
+      filename: safeDownloadName(filename),
+      saveAs: true,
+      conflictAction: "uniquify",
+    });
+    return { ok: true, id };
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 180000);
+  }
+}
+
+function tokenFrom(result) {
+  if (typeof result === "string") return result;
+  return result?.token || "";
+}
+
+async function driveToken(interactive) {
+  const result = await chrome.identity.getAuthToken({ interactive: !!interactive });
+  const token = tokenFrom(result);
+  if (!token) throw new Error("Google sign-in was cancelled.");
+  return token;
+}
+
+async function driveHasToken() {
+  const client = chrome.runtime.getManifest().oauth2?.client_id || "";
+  if (!client || client.startsWith("REPLACE_ME")) return { ok: false, error: "Google Drive is not set up in this copy." };
+  const granted = await chrome.permissions.contains({
+    permissions: ["identity"],
+    origins: ["https://www.googleapis.com/*"],
+  });
+  if (!granted) return { ok: false, error: "Google Drive is not connected." };
+  try {
+    await driveToken(false);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
+async function driveFetch(token, url, options = {}) {
+  const res = await fetch(url, {
+    ...options,
+    headers: { Authorization: "Bearer " + token, ...(options.headers || {}) },
+  });
+  if (res.status === 401) {
+    await new Promise((resolve) => chrome.identity.removeCachedAuthToken({ token }, resolve));
+    throw new Error("Google Drive session expired. Connect it again.");
+  }
+  return res;
+}
+
+async function ensureDriveFolder(token) {
+  const { driveFolderId } = await chrome.storage.local.get("driveFolderId");
+  if (driveFolderId) {
+    const res = await driveFetch(token, "https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(driveFolderId) + "?fields=id,trashed,name");
+    if (res.ok) {
+      const data = await res.json();
+      if (data.id && !data.trashed) return data.id;
+    }
+  }
+  const created = await driveFetch(token, "https://www.googleapis.com/drive/v3/files", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Listen Later", mimeType: "application/vnd.google-apps.folder" }),
+  });
+  const folder = await created.json();
+  if (!created.ok) throw new Error(folder.error?.message || "Could not create the Listen Later folder in Google Drive.");
+  await chrome.storage.local.set({ driveFolderId: folder.id });
+  return folder.id;
+}
+
+async function uploadEpisode(filename, html) {
+  const token = await driveToken(false);
+  const folderId = await ensureDriveFolder(token);
+  const boundary = "ll" + crypto.randomUUID();
+  const meta = JSON.stringify({ name: safeDownloadName(filename), parents: [folderId], mimeType: "text/html" });
+  const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${html}\r\n--${boundary}--`;
+  const res = await driveFetch(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink", {
+    method: "POST",
+    headers: { "Content-Type": "multipart/related; boundary=" + boundary },
+    body,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error?.message || "Google Drive rejected the file.");
+  return { ok: true, id: data.id, name: data.name, url: data.webViewLink || "" };
+}
+
 // Match patterns cannot name a port, so a pinned site is the scheme plus hostname.
 function siteOrigin(input) {
   const u = new URL(input);
@@ -206,6 +305,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await chrome.tabs.create({ url, openerTabId: sender.tab?.id });
         sendResponse({ ok: true, origin });
       } catch (e) { sendResponse({ ok: false, error: e.message || String(e) }); }
+    })();
+    return true;
+  }
+  if (msg?.type === "download-episode") {
+    (async () => {
+      try { sendResponse(await downloadEpisode(msg.filename, msg.html || "")); }
+      catch (e) { sendResponse({ ok: false, error: e.message || String(e) }); }
+    })();
+    return true;
+  }
+  if (msg?.type === "drive-has-token") {
+    driveHasToken().then(sendResponse);
+    return true;
+  }
+  if (msg?.type === "open-drive-auth") {
+    chrome.tabs.create({ url: chrome.runtime.getURL("drive.html"), openerTabId: sender.tab?.id });
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (msg?.type === "drive-connected" || msg?.type === "drive-denied") {
+    const tabId = sender.tab?.openerTabId;
+    if (tabId != null) chrome.tabs.sendMessage(tabId, { type: msg.type === "drive-connected" ? "drive-ready" : "drive-denied" }).catch(() => {});
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (msg?.type === "upload-episode") {
+    (async () => {
+      try { sendResponse(await uploadEpisode(msg.filename, msg.html || "")); }
+      catch (e) { sendResponse({ ok: false, error: e.message || String(e) }); }
     })();
     return true;
   }

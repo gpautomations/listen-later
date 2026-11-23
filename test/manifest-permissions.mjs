@@ -10,7 +10,11 @@ if (m.content_scripts) fail("content_scripts is set");
 for (const key of ["activeTab", "scripting", "contextMenus", "offscreen", "storage"]) {
   if (!m.permissions.includes(key)) fail("missing permission " + key);
 }
-if (m.permissions.includes("identity") || m.permissions.includes("downloads")) fail("unexpected permission");
+if (!m.permissions.includes("downloads")) fail("missing downloads permission for the save dialog fallback");
+if (m.permissions.includes("identity")) fail("identity should stay optional until Google Drive is connected");
+if (!m.optional_permissions?.includes("identity")) fail("optional identity permission missing");
+if (!String(m.oauth2?.client_id || "").startsWith("REPLACE_ME.")) fail("oauth client id must stay unset");
+if (JSON.stringify(m.oauth2?.scopes || []) !== JSON.stringify(["https://www.googleapis.com/auth/drive.file"])) fail("oauth scope must be drive.file only");
 const hosts = JSON.stringify(m.host_permissions || []);
 if (hosts.includes("<all_urls>") || hosts.includes("http://*/*") || hosts.includes("https://*/*")) fail("broad host_permissions: " + hosts);
 if (!m.commands?.["listen-page"]?.description) fail("missing listen-page command");

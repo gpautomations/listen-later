@@ -16,6 +16,7 @@ It includes or uses the components below. Full license texts follow the table.
 | Hugging Face jinja (`@huggingface/jinja`) | 0.5.13 | MIT | Hugging Face | Bundled (transformers.js dependency) |
 | ONNX Runtime Web (`onnxruntime-web`, `onnxruntime-common`) incl. `ort/ort-wasm-simd-threaded.jsep.*` | 1.22.0-dev.20250409 | MIT | Microsoft Corporation | Bundled; WebGPU/WASM inference runtime |
 | Mozilla Readability (`@mozilla/readability`) | 0.6.0 | Apache-2.0 | Arc90 Inc; Mozilla | Bundled in `content.js`; finds the article on the page |
+| qrcode-generator | 1.4.4 | MIT | Kazuhiko Arase | Bundled in `content.js`; draws a QR code for a Google Drive file link on the device. No chart service is called |
 | Emscripten runtime | 3.1.74 | MIT (or University of Illinois/NCSA) | Emscripten authors | JavaScript runtime code generated into `espeakng.mjs` |
 | musl libc (via Emscripten) | as in Emscripten 3.1.74 | MIT | Rich Felker et al. | C library linked into the eSpeak NG WebAssembly |
 | LLVM libc++ / libc++abi (via Emscripten) | as in Emscripten 3.1.74 | Apache-2.0 WITH LLVM-exception | LLVM project contributors | C++ runtime linked into the eSpeak NG WebAssembly |
@@ -313,6 +314,32 @@ Full Apache License 2.0 text:
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+```
+
+## MIT License — qrcode-generator
+
+```text
+The MIT License
+
+Copyright (c) 2009 Kazuhiko Arase
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 ```
 
 ## MIT License — Hugging Face jinja

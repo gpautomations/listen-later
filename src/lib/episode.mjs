@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Save episode: one self-contained HTML file with article text, word timings and 16-bit WAV audio.
-// Kokoro already returns Float32 PCM in the browser. WAV needs no encoder and plays offline.
-// 16-bit mono at 24 kHz is about 2.9 MB per minute, plus a little for the page text.
+// Save episode: one self-contained HTML file with article text, word timings and audio.
+// Audio is Opus in WebM when the browser can encode it, otherwise 16-bit WAV.
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -90,13 +89,14 @@ const PLAYER_SCRIPT = `
 (function () {
   var audio = document.getElementById("audio");
   var words = [].slice.call(document.querySelectorAll("[data-s]"));
-  var held = document.getElementById("wav");
+  var held = document.getElementById("audio-b64");
   var b64 = held ? held.textContent.replace(/\\s+/g, "") : "";
-  held.textContent = "";
+  var mime = (held && held.getAttribute("data-mime")) || "audio/webm";
+  if (held) held.textContent = "";
   var bin = atob(b64);
   var bytes = new Uint8Array(bin.length);
   for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  audio.src = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+  audio.src = URL.createObjectURL(new Blob([bytes], { type: mime }));
   var current = -1;
   function tick() {
     var t = audio.currentTime;
@@ -133,16 +133,38 @@ const PLAYER_SCRIPT = `
 })();
 `;
 
-export function buildEpisodeHtml({ title, sourceUrl, blocks, wavBase64, voiceLabel, durationSec }) {
+function wordParagraph(words) {
+  const spans = (words || []).map((w) => {
+    const start = Number(w.start);
+    const end = Number(w.end);
+    return `<span data-s="${start.toFixed(3)}" data-e="${end.toFixed(3)}">${esc(w.text)}</span>`;
+  }).join(" ");
+  return spans ? `<p>${spans}</p>` : "";
+}
+
+// Only pictures we encoded ourselves. A remote src would make the file ask the network.
+function imageFigure(part) {
+  const src = String(part?.src || "").replace(/\s+/g, "");
+  if (!/^data:image\/(?:jpeg|webp|png);base64,[a-z0-9+/=]+$/i.test(src)) return "";
+  return `<figure><img alt="${esc(part.alt || "")}" src="${src}"></figure>`;
+}
+
+export function buildEpisodeHtml({ title, sourceUrl, blocks, parts, audioBase64, wavBase64, audioMime, codecLabel, voiceLabel, durationSec }) {
   const safeTitle = esc(title || "Article");
-  const paras = (blocks || []).map((words) => {
-    const spans = words.map((w) => {
-      const start = Number(w.start);
-      const end = Number(w.end);
-      return `<span data-s="${start.toFixed(3)}" data-e="${end.toFixed(3)}">${esc(w.text)}</span>`;
-    }).join(" ");
-    return `<p>${spans}</p>`;
-  }).join("\n");
+  const mime = audioMime || "audio/wav";
+  const b64 = audioBase64 || wavBase64 || "";
+  const codec = codecLabel || (mime === "audio/wav" ? "16-bit WAV, stored in this file" : "Opus audio, stored in this file");
+  const sequence = parts || (blocks || []).map((words) => ({ type: "words", words }));
+  let hasImage = false;
+  const body = sequence.map((part) => {
+    if (part?.type === "image") {
+      const fig = imageFigure(part);
+      if (fig) hasImage = true;
+      return fig;
+    }
+    return wordParagraph(part?.words || part);
+  }).filter(Boolean).join("\n");
+  const pictureNote = hasImage ? " Pictures from the article are inside this file too." : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -162,6 +184,8 @@ export function buildEpisodeHtml({ title, sourceUrl, blocks, wavBase64, voiceLab
   .bar audio { display: block; width: min(40rem, calc(100% - 2.5rem)); margin: 0 auto; }
   article { padding-bottom: 2rem; }
   article p { margin: 0 0 1rem; }
+  article figure { margin: 0 0 1.25rem; }
+  article img { display: block; width: 100%; height: auto; }
   span[data-s] { border-radius: 3px; cursor: pointer; }
   span[data-s]:hover { background: rgba(255, 190, 0, .25); }
   span.on { background: #ffbe00; }
@@ -171,15 +195,15 @@ export function buildEpisodeHtml({ title, sourceUrl, blocks, wavBase64, voiceLab
 <body>
 <header>
   <h1>${safeTitle}</h1>
-  <p class="meta">Saved with Listen Later. Length ${clock(durationSec)}. The audio is inside this file. Nothing is loaded from the internet.</p>
+  <p class="meta">Saved with Listen Later. Length ${clock(durationSec)}. The audio is inside this file.${pictureNote} Nothing is loaded from the internet.</p>
   <p class="src">Source: ${sourceHtml(sourceUrl)}</p>
 </header>
-<div class="bar"><audio id="audio" controls preload="none"></audio></div>
+<div class="bar"><audio id="audio" controls playsinline preload="none"></audio></div>
 <article>
-${paras || "<p>No article text.</p>"}
+${body || "<p>No article text.</p>"}
 </article>
-<footer>Voice: ${esc(voiceLabel || "Kokoro")}, generated on your computer. 16-bit WAV at 24 kHz, stored in this file. This file is yours. Press space to play or pause. Click a word to jump there.</footer>
-<script type="text/plain" id="wav">${wavBase64 || ""}</script>
+<footer>Voice: ${esc(voiceLabel || "Kokoro")}, generated on your computer. ${esc(codec)} This file is yours. Press space to play or pause. Click a word to jump there.</footer>
+<script type="text/plain" id="audio-b64" data-mime="${esc(mime)}">${b64}</script>
 <script>${PLAYER_SCRIPT}</script>
 <noscript>JavaScript is off, so word highlighting will not run. The audio is still in this file.</noscript>
 </body>

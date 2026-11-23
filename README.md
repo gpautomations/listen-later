@@ -39,10 +39,10 @@ Works in Chrome/Edge/Brave 116+.
   headings, to your Listen Later server's `POST /api/ingest`. It shows up in your private podcast feed (`/feed.xml`) a few
   minutes later. A toast confirms success or explains the failure (for example, not on the home network). With no server
   set, the button asks you to add one in Options; nothing is sent until you do.
-- **Save episode** (download icon): builds one HTML file on your computer with the article text, word timings and the
-  audio embedded (16-bit WAV, about 2.9 MB per minute). Open it anytime, including offline. Chrome saves it to your
-  downloads folder. Point that folder at Google Drive or Dropbox, or turn on "Ask where to save each file", if you
-  want it in storage you already own. Nothing is uploaded. The optional phone server is not required.
+- **Save episode** (download icon): asks where to save one HTML file with the article text, its pictures, word timings and
+  Opus audio inside (about 200 KB per minute of audio, plus the pictures; WAV only if Opus cannot be encoded). Chrome remembers the last folder.
+  Open the file anytime, including offline. Nothing is uploaded unless you connect Google Drive, and that button
+  stays hidden until a client id is set. A Drive save then shows the file link and a QR code. The optional phone server is not required.
 - **Auto-scroll** follows the voice. Scroll yourself and it stops following; tap **Follow** to snap back.
 - **×** hides the player (toolbar icon brings it back).
 
@@ -106,7 +106,7 @@ clipboard, and opening it shows the invite and starts audio in 1.2 s with one cl
 - First play downloads the model (326 MB High, 92 MB Fast). Slow connections see a "Downloading voice NN%" status.
 - On slower CPUs without WebGPU, generation may fall behind real time; the player shows "Buffering…" between sentences.
 - Send to my phone only works where the browser can reach your server (same home network, or a VPN such as Tailscale). You do not need that server. Save episode keeps the audio in a file on your computer.
-- Save episode uses the on-device Kokoro voice, so the first save may download the model (326 MB High, 92 MB Fast). Web Speech API audio cannot be recorded, so it is not used. A 10 minute article is on the order of 30 MB of WAV inside the HTML file. Google Drive and Dropbox upload from the extension is not built: both need an OAuth client id, and this repo does not ship one.
+- Save episode uses the on-device Kokoro voice, so the first save may download the model (326 MB High, 92 MB Fast). Web Speech API audio cannot be recorded, so it is not used. Opus in the saved file measured 26.5 kbps (about 199 KB of audio per minute, before the HTML text) on Chromium, with word bursts landing within 1 ms of the original timeline after the encoder delay is trimmed. Pictures in the article are re-encoded into the file (WebP or JPEG, long edge at most 1280px) and counted in the size estimate before you continue. A picture the page will not let the browser read is skipped. A page that cannot show the folder picker falls back to Chrome's save dialog (`downloads` permission, `saveAs`). Google Drive upload is implemented but hidden while `oauth2.client_id` is `REPLACE_ME`. After a Drive upload the player shows the file's private link and a QR code drawn locally. Drive's preview and the iPhone Files preview (Quick Look) do not run the page. Opened from an http link, the same file played Opus audio and highlighted the tapped word in a mobile-sized Chromium window and in Playwright WebKit 27.2 (the engine family behind current Safari and Chrome on iOS). A `file://` URL did the same in Chromium. This machine has no iPhone, so Files and Quick Look were not run. Dropbox is not built: it would need its own app key, an OAuth token (PKCE), and `https://api.dropboxapi.com` plus `https://content.dropboxapi.com` host access.
 - English only. Numbers, currencies and years are normalized; unusual abbreviations may be read literally.
 - Pages that re-render their article text after load (some single-page apps) can drop the word spans; reload and press play again.
 - Paywalled or login-only text is only read if it's visible in your browser. Iframes and PDFs aren't supported.

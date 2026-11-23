@@ -56,6 +56,21 @@ try {
   report.shareCount = await host.locator("button.share").count();
   if (report.saveLabel !== "Save episode") throw new Error("save button missing: " + report.saveLabel);
   if (report.shareCount !== 0) throw new Error("share button still present");
+  if (!report.manifest.permissions.includes("downloads")) throw new Error("downloads permission missing");
+  await host.locator("button.save").click();
+  await page.waitForFunction(() => document.querySelector("#listen-later-host")?.dataset.savePhase === "confirm", null, { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector("#listen-later-host")?.dataset.saveImages != null, null, { timeout: 8000 });
+  report.saveEstimate = await host.locator(".save-estimate").innerText();
+  report.saveImages = await host.getAttribute("data-save-images");
+  report.saveImageBytes = Number(await host.getAttribute("data-save-image-bytes"));
+  report.driveHidden = await host.locator("button.drive").evaluate((el) => el.hidden);
+  if (!/File about/.test(report.saveEstimate)) throw new Error("estimate missing: " + report.saveEstimate);
+  if (report.saveImages !== "1") throw new Error("expected one article picture, got " + report.saveImages);
+  if (!(report.saveImageBytes > 100)) throw new Error("picture bytes missing from the estimate");
+  if (!/Including/.test(report.saveEstimate)) throw new Error("estimate omitted pictures: " + report.saveEstimate);
+  if (!report.driveHidden) throw new Error("Drive button is visible without a client id");
+  await host.locator(".savebox .stop").click();
+  await page.waitForFunction(() => document.querySelector("#listen-later-host")?.dataset.savePhase === "cancelled", null, { timeout: 5000 });
 
   report.secondClick = await activateTab(sw, page);
   await page.waitForFunction(() => document.querySelector("#listen-later-host")?.style.display === "none", null, { timeout: 5000 });

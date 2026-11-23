@@ -30,10 +30,10 @@ What you can do:
 • Pick a speed from 0.8x to 2x, and choose from seven natural voices (American and British, female and male).
 • Choose High quality (the full voice model) or Fast (a smaller download).
 • Scroll freely. The page follows the voice until you scroll, then a Follow button brings you back.
-• Save episode. One button downloads a single HTML file with the article, word timings and audio inside. Open it anytime, including offline. Put it in a Google Drive or Dropbox folder if you want it on your other devices. Listen Later does not host it.
+• Save episode. One button saves a single HTML file with the article, its pictures, word timings and audio inside. Open it anytime, including offline. Put it in a Google Drive or Dropbox folder if you want it on your other devices. An optional Save to Google Drive button is hidden until a Google client id is added. Listen Later does not host the file.
 • Send to my phone (optional). If you run the free, open-source Listen Later server on your own computer, one tap turns the article into an episode in your private podcast feed. You do not need that server to save an episode.
 
-Privacy, in one line: the article text never leaves your computer, except when you choose "Send to my phone", which sends it only to the server address you set. Save episode writes a file on your computer and does not upload it.
+Privacy, in one line: the article text never leaves your computer, except when you choose "Send to my phone" (your own server) or Save to Google Drive (your own Drive, and only after a Google client id is added). Save episode otherwise writes a file on your computer and does not upload it.
 
 Works best on articles, blogs, essays and documentation. English voices only for now.
 
@@ -48,7 +48,9 @@ Read the article on the current page aloud with an on-device voice and highlight
 - scripting: injects the packaged content script and CSS into that tab on demand.
 - contextMenus: adds "Listen to this page" to the page menu.
 - offscreen: runs the voice model in an offscreen document (MV3 service workers can't use WebGPU).
-- storage: remembers voice, speed, quality, the optional server address and sites the user pinned.
+- storage: remembers voice, speed, quality, the optional server address, sites the user pinned, and the id of a Listen Later folder the extension created in Google Drive.
+- downloads: Chrome's save dialog when the page cannot show its own folder picker. The picker is tried first. Cancelling the picker does not fall through into a second dialog.
+- identity (optional_permissions, not granted at install) and oauth2 client_id `REPLACE_ME.apps.googleusercontent.com` with scope `drive.file` only: Save to Google Drive. The button is hidden while the client id is still the placeholder. Do not upload this manifest until that id is a real Chrome-extension client, or until the oauth2 block is removed. `drive.file` can create and read only files this extension created.
 - Host access to huggingface.co / hf.co: one-time download of the open-source voice model files.
 - Optional host access (`optional_host_permissions`, not granted at install): requested only when the user saves a server address for Send to my phone, or turns on "Always show on this site" for one site. The store build has no default server and no pinned sites.
 - Remote code: none. All JavaScript and WebAssembly ship inside the package. Only model weights (data) are downloaded.

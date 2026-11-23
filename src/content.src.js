@@ -1,7 +1,11 @@
 // Listen Later content script: finds the article, wraps its words in place, and drives a floating player.
 // Injected only after the user turns the page on (toolbar, menu, shortcut, or a site they pinned).
 import { Readability, isProbablyReaderable } from "@mozilla/readability";
-import { buildEpisodeHtml, bytesToBase64, concatFloat32, encodeWav, episodeFilename, float32FromBase64 } from "./lib/episode.mjs";
+import { driveClientConfigured } from "./lib/drive-config.mjs";
+import { buildEpisodeHtml, bytesToBase64, concatFloat32, episodeFilename, float32FromBase64 } from "./lib/episode.mjs";
+import { encodeImageBlob, encodeImageSource, IMAGE_MIN_EDGE } from "./lib/images.mjs";
+import { qrSvg } from "./lib/qr.mjs";
+import { defaultSynthRate, encodePcm, estimateHtmlBytes, formatBytes, formatClock, remainingSeconds, speechSeconds } from "./lib/speech-audio.mjs";
 
 (() => {
   if (window.__listenLater) return;
@@ -158,9 +162,38 @@ import { buildEpisodeHtml, bytesToBase64, concatFloat32, encodeWav, episodeFilen
     .toast.ok { border-color: rgba(80,200,120,.45); }
     .toast.err { border-color: rgba(255,90,90,.5); }
     .toast b { color: #fff; }
+    .savebox { display: none; min-width: 280px; max-width: 320px; }
+    .savebox.show { display: block; }
+    .savebox p { margin: 0 0 8px; font-size: 12.5px; color: #ddd; }
+    .savebox .save-title { font-size: 14px; color: #fff; font-weight: 600; }
+    .meter { height: 6px; background: rgba(255,255,255,.12); border-radius: 99px; overflow: hidden; margin: 0 0 8px; }
+    .meter > div { height: 100%; width: 0; background: #ffbe00; }
+    .save-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .savebox button.wide { width: auto; height: auto; border-radius: 8px; padding: 6px 10px; font-size: 12px; background: rgba(255,255,255,.08); color: #eee; }
+    .savebox button.wide:hover { background: rgba(255,255,255,.16); color: #fff; }
+    .savebox button.wide.go { background: #ffbe00; color: #111; }
+    .savebox button.wide.go:hover { background: #ffd24d; color: #111; }
+    .savebox button[hidden], .savebox p[hidden], .savebox div[hidden] { display: none; }
+    .save-link-row a { color: #ffbe00; }
+    .qr { background: #fff; border-radius: 8px; padding: 8px; margin: 0 0 8px; width: fit-content; }
+    .qr svg { display: block; width: 180px; height: 180px; }
   </style>
   <div class="wrap" role="region" aria-label="Listen Later player">
     <div class="card toast" role="status" aria-live="polite"></div>
+    <div class="card savebox" role="dialog" aria-label="Save episode">
+      <p class="save-title">Save episode</p>
+      <p class="save-estimate"></p>
+      <div class="meter" hidden><div></div></div>
+      <p class="save-time"></p>
+      <p class="save-link-row" hidden><a class="save-link" target="_blank" rel="noopener noreferrer"></a></p>
+      <div class="qr" hidden></div>
+      <p class="save-phone" hidden></p>
+      <div class="save-actions">
+        <button class="wide go" type="button">Continue</button>
+        <button class="wide drive" type="button" hidden>Save to Google Drive</button>
+        <button class="wide stop" type="button">Cancel</button>
+      </div>
+    </div>
     <div class="card settings">
       <label for="ll-speed">Speed</label><select id="ll-speed" class="speed">${SPEEDS.map((s) => `<option value="${s}">${s}×</option>`).join("")}</select>
       <label for="ll-voice">Voice</label><select id="ll-voice" class="voice">${VOICES.map(([v, n]) => `<option value="${v}">${n}</option>`).join("")}</select>
@@ -176,7 +209,7 @@ import { buildEpisodeHtml, bytesToBase64, concatFloat32, encodeWav, episodeFilen
       <button class="follow" title="Scroll back to the voice">Follow</button>
       <div class="sep"></div>
       <button class="phone" title="Send to my phone (${__SERVER_LABEL__})" aria-label="Send to my phone">${I.phone}</button>
-      <button class="save" title="Save episode: download a read-along page with the audio inside" aria-label="Save episode">${I.save}</button>
+      <button class="save" title="Save episode: choose a folder and save a read-along page with the audio inside" aria-label="Save episode">${I.save}</button>
       <button class="gear" title="Speed, voice, quality" aria-label="Settings" aria-expanded="false">${I.gear}</button>
       <button class="close" title="Hide player" aria-label="Hide player">${I.close}</button>
     </div>
@@ -184,7 +217,10 @@ import { buildEpisodeHtml, bytesToBase64, concatFloat32, encodeWav, episodeFilen
   const $ = (s) => shadow.querySelector(s);
   shadow.querySelector(".speed").value = "1";
   const ui = { play: $(".play"), prev: $(".prev"), next: $(".next"), status: $(".status"), follow: $(".follow"), speed: $(".speed"), voice: $(".voice"), quality: $(".quality"),
-    close: $(".close"), phone: $(".phone"), save: $(".save"), always: $(".always"), gear: $(".gear"), settings: $(".settings"), toast: $(".toast") };
+    close: $(".close"), phone: $(".phone"), save: $(".save"), always: $(".always"), gear: $(".gear"), settings: $(".settings"), toast: $(".toast"),
+    savebox: $(".savebox"), saveTitle: $(".save-title"), saveEstimate: $(".save-estimate"), saveTime: $(".save-time"),
+    saveLinkRow: $(".save-link-row"), saveLink: $(".save-link"), saveQr: $(".qr"), savePhone: $(".save-phone"),
+    saveMeter: $(".meter"), saveFill: $(".meter > div"), saveGo: $(".savebox .go"), saveDrive: $(".savebox .drive"), saveStop: $(".savebox .stop") };
   const ICON_PLAY = I.play, ICON_PAUSE = I.pause, ICON_LOAD = I.load;
   let toastTimer = 0;
   function toast(html, kind = "ok", ms = 6000) {
@@ -216,6 +252,7 @@ import { buildEpisodeHtml, bytesToBase64, concatFloat32, encodeWav, episodeFilen
     const t0 = performance.now();
     const art = detectArticle() || S.article;
     if (!art) { setStatus("No article found"); return false; }
+    S.article = art;
     const { units, blockStarts } = wrapBlocks(art.blocks);
     S.units = units; S.blockStarts = blockStarts; S.sentences = buildSentences(units, blockStarts); S.prepared = true;
     document.documentElement.classList.add("ll-on");
@@ -497,19 +534,115 @@ import { buildEpisodeHtml, bytesToBase64, concatFloat32, encodeWav, episodeFilen
   }
   ui.phone.onclick = sendToPhone;
 
-  // ---------- save episode (one HTML file on this computer; no upload) ----------
+  // ---------- save episode ----------
   // Replaces the old "share listen link", which only copied the article URL plus #listen-later.
-  // Audio is the same on-device Kokoro PCM the player uses, packed as 16-bit WAV inside the file.
-  function downloadHtml(filename, html) {
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  // Kokoro PCM is packed as Opus (about 26 kbps) inside one HTML file. WAV is the fallback.
+  let synthRate = defaultSynthRate(S.quality);
+  chrome.storage.local.get("synthWallPerAudio").then((v) => {
+    if (v.synthWallPerAudio > 0.05 && v.synthWallPerAudio < 30) synthRate = v.synthWallPerAudio;
+  });
+  function driveOn() {
+    try { return driveClientConfigured(chrome.runtime.getManifest().oauth2?.client_id); }
+    catch (e) { return false; }
+  }
+  function clearDriveLink() {
+    ui.saveLinkRow.hidden = true;
+    ui.saveLink.removeAttribute("href");
+    ui.saveLink.textContent = "";
+    ui.saveQr.hidden = true;
+    ui.saveQr.replaceChildren();
+    ui.savePhone.hidden = true;
+    ui.savePhone.textContent = "";
+    host.removeAttribute("data-save-url");
+  }
+  function hideSaveBox() {
+    ui.savebox.classList.remove("show");
+    ui.saveMeter.hidden = true;
+    clearDriveLink();
+  }
+  function showSaveBox() { ui.savebox.classList.add("show"); }
+  function driveFileUrl(up) {
+    const id = String(up?.id || "");
+    const fallback = /^[a-zA-Z0-9_-]+$/.test(id) ? `https://drive.google.com/file/d/${id}/view` : "";
+    const raw = String(up?.url || fallback);
+    try {
+      const u = new URL(raw);
+      if (u.protocol !== "https:") return "";
+      if (u.hostname !== "drive.google.com" && u.hostname !== "docs.google.com") return "";
+      return u.toString();
+    } catch (e) {
+      return "";
+    }
+  }
+  function showDriveLink(up) {
+    const url = driveFileUrl(up);
+    if (!url) return;
+    ui.saveLink.href = url;
+    ui.saveLink.textContent = "Open in Google Drive";
+    ui.saveLinkRow.hidden = false;
+    try {
+      ui.saveQr.innerHTML = qrSvg(url);
+      ui.saveQr.hidden = false;
+    } catch (e) {
+      ui.saveQr.hidden = true;
+    }
+    ui.savePhone.hidden = false;
+    ui.savePhone.textContent = "Scan the code to open this file on your phone. Sign in to the same Google account. The file stays private. Google Drive's preview and the iPhone Files preview (Quick Look) do not play the page. Download the file, then open it in Safari or Chrome.";
+    setAttr("save-url", url);
+  }
+  function articleOrder(art) {
+    const root = art?.root && art.root.nodeType === 1 ? art.root : document.body;
+    const images = [...root.querySelectorAll("img")].filter((img) => !img.closest("#listen-later-host"));
+    const nodes = [
+      ...(art?.blocks || []).map((el, index) => ({ el, kind: "text", index })),
+      ...images.map((el) => ({ el, kind: "image" })),
+    ];
+    nodes.sort((a, b) => {
+      if (a.el === b.el) return 0;
+      if (a.el.contains(b.el)) return -1;
+      if (b.el.contains(a.el)) return 1;
+      const pos = a.el.compareDocumentPosition(b.el);
+      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      return 0;
+    });
+    return nodes;
+  }
+  async function embedPageImage(img) {
+    try {
+      if (!img.complete || !img.naturalWidth) await img.decode();
+    } catch (e) { /* the fetch path below may still work */ }
+    const w = img.naturalWidth || 0;
+    const h = img.naturalHeight || 0;
+    if (w && h && (w < IMAGE_MIN_EDGE || h < IMAGE_MIN_EDGE)) return null;
+    const alt = (img.getAttribute("alt") || "").trim().slice(0, 300);
+    if (w && h) {
+      try { return { el: img, alt, ...(await encodeImageSource(img)) }; }
+      catch (e) { /* cross-origin picture: try a CORS fetch */ }
+    }
+    const src = img.currentSrc || img.src;
+    if (!src) return null;
+    try {
+      const res = await fetch(src, { credentials: "omit", mode: "cors" });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      if (blob.type && !blob.type.startsWith("image/")) return null;
+      const encoded = await encodeImageBlob(blob);
+      if (encoded.width < IMAGE_MIN_EDGE || encoded.height < IMAGE_MIN_EDGE) return null;
+      return { el: img, alt, ...encoded };
+    } catch (e2) {
+      return null;
+    }
+  }
+  function paintProgress(doneSentences, totalSentences, elapsed, audioDone, audioTotal) {
+    const pct = totalSentences ? Math.round((doneSentences / totalSentences) * 100) : 0;
+    ui.saveFill.style.width = pct + "%";
+    ui.saveMeter.hidden = false;
+    const left = remainingSeconds(elapsed, audioDone, audioTotal, synthRate);
+    ui.saveTime.textContent = `Elapsed ${formatClock(elapsed)}. About ${formatClock(left)} left.`;
+    setAttr("save-elapsed", elapsed.toFixed(1));
+    setAttr("save-left", left.toFixed(1));
+    setAttr("save-pct", pct);
   }
   function setSaveLocked(locked) {
     S.saving = locked;
@@ -518,15 +651,142 @@ import { buildEpisodeHtml, bytesToBase64, concatFloat32, encodeWav, episodeFilen
     ui.prev.disabled = locked;
     ui.next.disabled = locked;
   }
-  async function saveEpisode() {
+  function paintEstimate(speech) {
+    const fileBytes = estimateHtmlBytes(speech, S.article?.chars || 0, S.imageBytes || 0);
+    const rate = synthRate || defaultSynthRate(S.quality);
+    const counted = host.dataset.saveImages != null;
+    const pictures = !counted
+      ? " Counting pictures."
+      : (Number(host.dataset.saveImages) > 0 ? ` Including ${formatBytes(S.imageBytes)} of pictures.` : "");
+    ui.saveEstimate.textContent = `About ${formatClock(speech)} of audio. Creating it takes about ${formatClock(speech * rate)} on this computer. File about ${formatBytes(fileBytes)}.${pictures} The estimate updates after the first sentence.`;
+    setAttr("save-bytes-est", fileBytes);
+    return fileBytes;
+  }
+  function openSaveDialog() {
     if (S.saving) return;
-    if (S.playing) await pause();
     if (!prepare() || !S.sentences?.length) { toast("No article found on this page.", "err"); return; }
+    const words = S.units.length;
+    const speech = speechSeconds(words, S.speed || 1);
+    S.articleOrder = articleOrder(S.article);
+    S.figures = [];
+    S.imageBytes = 0;
+    const token = (S.imageToken = (S.imageToken || 0) + 1);
+    host.removeAttribute("data-save-images");
+    host.removeAttribute("data-save-image-bytes");
+    clearDriveLink();
+    ui.saveTitle.textContent = "Save episode";
+    ui.saveTime.textContent = S.modelReady ? "" : "The first time also downloads the voice model.";
+    ui.saveGo.hidden = false;
+    ui.saveDrive.hidden = !driveOn();
+    ui.saveGo.disabled = true;
+    ui.saveDrive.disabled = true;
+    ui.saveStop.textContent = "Cancel";
+    ui.saveMeter.hidden = true;
+    ui.saveFill.style.width = "0";
+    paintEstimate(speech);
+    showSaveBox();
+    setAttr("save-phase", "confirm");
+    setAttr("save-speech-sec", speech.toFixed(1));
+    S.imageJob = (async () => {
+      const seen = new Set();
+      const figures = [];
+      let bytes = 0;
+      for (const node of S.articleOrder) {
+        if (node.kind !== "image" || seen.has(node.el)) continue;
+        seen.add(node.el);
+        if (token !== S.imageToken) return;
+        const fig = await embedPageImage(node.el);
+        if (!fig) continue;
+        figures.push(fig);
+        bytes += fig.bytes;
+      }
+      if (token !== S.imageToken) return;
+      S.figures = figures;
+      S.imageBytes = bytes;
+      setAttr("save-images", figures.length);
+      setAttr("save-image-bytes", bytes);
+      if (host.dataset.savePhase === "confirm") paintEstimate(speech);
+    })().catch(() => {
+      if (token !== S.imageToken) return;
+      setAttr("save-images", S.figures?.length || 0);
+      setAttr("save-image-bytes", S.imageBytes || 0);
+    }).finally(() => {
+      if (token !== S.imageToken) return;
+      ui.saveGo.disabled = false;
+      ui.saveDrive.disabled = false;
+    });
+  }
+  async function chooseSaveFile(filename) {
+    if (typeof window.showSaveFilePicker !== "function") return { download: true };
+    try {
+      const handle = await window.showSaveFilePicker({
+        id: "listen-later-episode",
+        startIn: "downloads",
+        suggestedName: filename,
+        types: [{ description: "Listen Later episode", accept: { "text/html": [".html"] } }],
+      });
+      return { handle };
+    } catch (e) {
+      if (e?.name === "AbortError") return { cancelled: true };
+      return { download: true };
+    }
+  }
+  async function writeEpisode(plan, filename, html) {
+    if (plan.handle) {
+      const writable = await plan.handle.createWritable();
+      await writable.write(new Blob([html], { type: "text/html" }));
+      await writable.close();
+      return { where: "Saved in the folder you chose." };
+    }
+    const r = await chrome.runtime.sendMessage({ type: "download-episode", filename, html });
+    if (!r?.ok) throw new Error(r?.error || "Chrome could not ask where to save the file.");
+    return { where: "Chrome asked where to save it." };
+  }
+  function waitForDrive() {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { chrome.runtime.onMessage.removeListener(onMsg); resolve(false); }, 180000);
+      function onMsg(msg) {
+        if (msg?.type !== "drive-ready" && msg?.type !== "drive-denied") return;
+        clearTimeout(timer);
+        chrome.runtime.onMessage.removeListener(onMsg);
+        resolve(msg.type === "drive-ready");
+      }
+      chrome.runtime.onMessage.addListener(onMsg);
+    });
+  }
+  async function saveEpisode(destination) {
+    if (S.saving) return;
+    const title = norm(S.article?.title) || document.title || "Article";
+    const filename = episodeFilename(title);
+    const plan = destination === "drive" ? { drive: true } : await chooseSaveFile(filename);
+    if (plan.cancelled) { setAttr("save-phase", "cancelled"); hideSaveBox(); return; }
+    if (plan.drive) {
+      const ready = await chrome.runtime.sendMessage({ type: "drive-has-token" });
+      if (!ready?.ok) {
+        await chrome.runtime.sendMessage({ type: "open-drive-auth" });
+        ui.saveTime.textContent = "Allow Google Drive in the tab Chrome just opened, then this will continue.";
+        const ok = await waitForDrive();
+        if (!ok) { toast("Google Drive was not connected.", "err"); setAttr("save-phase", "cancelled"); return; }
+      }
+    }
+    if (S.playing) await pause();
     setSaveLocked(true);
+    S.cancelSave = false;
     S.epoch++;
     const epoch = S.epoch;
     send({ type: "epoch", epoch }).catch(() => {});
-    toast("Creating the audio on this computer. A long article can take a few minutes.", "ok", 20000);
+    ui.saveGo.hidden = true;
+    ui.saveDrive.hidden = true;
+    ui.saveStop.textContent = "Cancel";
+    ui.saveTitle.textContent = "Creating audio";
+    showSaveBox();
+    setAttr("save-phase", "running");
+    const started = performance.now();
+    const speechEst = speechSeconds(S.units.length, S.speed || 1);
+    const timer = setInterval(() => {
+      if (!S.saving) return;
+      paintProgress(Number(host.dataset.saveSentences || 0), S.sentences.length, (performance.now() - started) / 1000, Number(host.dataset.saveAudio || 0), speechEst);
+    }, 500);
     try {
       const chunks = [];
       const blocks = [];
@@ -535,55 +795,120 @@ import { buildEpisodeHtml, bytesToBase64, concatFloat32, encodeWav, episodeFilen
       let samples = 0;
       let sampleRate = 24000;
       for (let s = 0; s < S.sentences.length; s++) {
-        if (epoch !== S.epoch) { toast("Save cancelled.", "err"); return; }
+        if (S.cancelSave || epoch !== S.epoch) { setAttr("save-phase", "cancelled"); toast("Save cancelled.", "err"); hideSaveBox(); return; }
         setStatus(`Saving ${s + 1}/${S.sentences.length}`);
         setAttr("save", `${s + 1}/${S.sentences.length}`);
+        ui.saveEstimate.textContent = `Sentence ${s + 1} of ${S.sentences.length}.`;
         const words = S.sentences[s].map((u) => S.units[u].text);
         const r = await send({ type: "synth", words, voice: S.voice, speed: S.speed, quality: S.quality, epoch });
-        if (epoch !== S.epoch) { toast("Save cancelled.", "err"); return; }
+        if (S.cancelSave || epoch !== S.epoch || r?.stale) { setAttr("save-phase", "cancelled"); toast("Save cancelled.", "err"); hideSaveBox(); return; }
         if (!r?.ok) throw new Error(r?.error || "voice failed");
         const audio = float32FromBase64(r.f32);
         if (chunks.length && r.sampleRate !== sampleRate) throw new Error("sample rate changed");
         sampleRate = r.sampleRate;
         const t0 = samples / sampleRate;
-        S.sentences[s].forEach((ui, i) => {
-          if (starts.has(ui) && cur.length) { blocks.push(cur); cur = []; }
+        S.sentences[s].forEach((uiIdx, i) => {
+          if (starts.has(uiIdx) && cur.length) { blocks.push(cur); cur = []; }
           const span = r.times[i] || [0, 0];
-          cur.push({ text: S.units[ui].text, start: span[0] + t0, end: span[1] + t0 });
+          cur.push({ text: S.units[uiIdx].text, start: span[0] + t0, end: span[1] + t0 });
         });
         chunks.push(audio);
         samples += audio.length;
         S.modelReady = true;
+        const audioDone = samples / sampleRate;
+        const elapsed = (performance.now() - started) / 1000;
+        if (s === 0 && audioDone > 0.05) {
+          synthRate = elapsed / audioDone;
+          ui.saveTime.textContent = `Updated after the first sentence: about ${formatClock(remainingSeconds(elapsed, audioDone, speechEst, synthRate))} left.`;
+        }
+        setAttr("save-sentences", s + 1);
+        setAttr("save-audio", audioDone.toFixed(2));
+        paintProgress(s + 1, S.sentences.length, elapsed, audioDone, Math.max(speechEst, audioDone));
       }
       if (cur.length) blocks.push(cur);
-      const wav = encodeWav(concatFloat32(chunks), sampleRate);
-      const title = norm(S.article?.title) || document.title || "Article";
-      const filename = episodeFilename(title);
+      if (S.cancelSave) { setAttr("save-phase", "cancelled"); toast("Save cancelled.", "err"); hideSaveBox(); return; }
+      const wall = (performance.now() - started) / 1000;
+      const audioSec = samples / sampleRate;
+      if (audioSec > 0.2) {
+        synthRate = wall / audioSec;
+        chrome.storage.local.set({ synthWallPerAudio: synthRate }).catch(() => {});
+      }
+      ui.saveEstimate.textContent = "Packing the audio.";
+      setStatus("Packing audio");
+      const encoded = await encodePcm(concatFloat32(chunks), sampleRate, { shouldCancel: () => S.cancelSave || epoch !== S.epoch });
       const voiceLabel = VOICES.find(([id]) => id === S.voice)?.[1] || S.voice;
+      if (S.imageJob) await S.imageJob;
+      const byEl = new Map((S.figures || []).map((fig) => [fig.el, fig]));
+      const parts = [];
+      for (const node of S.articleOrder || []) {
+        if (node.kind === "text") {
+          const words = blocks[node.index] || [];
+          if (words.length) parts.push({ type: "words", words });
+        } else {
+          const fig = byEl.get(node.el);
+          if (fig) parts.push({ type: "image", src: fig.dataUrl, alt: fig.alt });
+        }
+      }
       const html = buildEpisodeHtml({
         title,
         sourceUrl: location.href.split("#")[0],
-        blocks,
-        wavBase64: bytesToBase64(wav),
+        parts,
+        audioBase64: bytesToBase64(encoded.bytes),
+        audioMime: encoded.mime,
+        codecLabel: encoded.label,
         voiceLabel,
-        durationSec: samples / sampleRate,
+        durationSec: audioSec,
       });
-      downloadHtml(filename, html);
-      const mb = wav.byteLength / 1e6;
-      const size = mb >= 10 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
+      const htmlBytes = new TextEncoder().encode(html).length;
+      let where = "";
+      let uploaded = null;
+      if (plan.drive) {
+        const up = await chrome.runtime.sendMessage({ type: "upload-episode", filename, html });
+        if (!up?.ok) throw new Error(up?.error || "Google Drive upload failed");
+        uploaded = up;
+        where = "Saved to your Google Drive, in the Listen Later folder.";
+      } else {
+        const wrote = await writeEpisode(plan, filename, html);
+        where = wrote.where;
+      }
+      ui.saveFill.style.width = "100%";
+      ui.saveTitle.textContent = "Saved";
+      ui.saveEstimate.textContent = `${filename} (${formatBytes(htmlBytes)}).`;
+      ui.saveTime.textContent = where + " Open the HTML file anytime, even offline.";
+      if (uploaded) showDriveLink(uploaded);
+      ui.saveStop.textContent = "Close";
+      setAttr("save-phase", "done");
       setAttr("saved", filename);
-      setAttr("save-bytes", wav.byteLength);
+      setAttr("save-bytes", htmlBytes);
+      setAttr("save-codec", encoded.codec);
       setStatus("Saved");
-      toast(`Saved <b>${esc(filename)}</b> (${size}). Open the HTML file anytime, even offline. The audio is inside it. To keep it on your other devices, move it into a Google Drive or Dropbox folder.`, "ok", 12000);
     } catch (e) {
+      if (e?.name === "AbortError" || S.cancelSave) {
+        setAttr("save-phase", "cancelled");
+        toast("Save cancelled.", "err");
+        hideSaveBox();
+        return;
+      }
       console.warn("[ListenLater] save failed", e);
       toast("Couldn't save: " + esc(e.message || e), "err", 10000);
       setStatus("Save failed");
+      setAttr("save-phase", "failed");
+      hideSaveBox();
     } finally {
+      clearInterval(timer);
       setSaveLocked(false);
     }
   }
-  ui.save.onclick = () => { saveEpisode(); };
+  ui.save.onclick = () => { openSaveDialog(); };
+  ui.saveGo.onclick = () => { saveEpisode("file"); };
+  ui.saveDrive.onclick = () => { saveEpisode("drive"); };
+  ui.saveStop.onclick = () => {
+    if (!S.saving) { setAttr("save-phase", host.dataset.savePhase === "done" ? "done" : "cancelled"); hideSaveBox(); return; }
+    S.cancelSave = true;
+    S.epoch++;
+    send({ type: "epoch", epoch: S.epoch }).catch(() => {});
+    ui.saveStop.textContent = "Cancelling";
+  };
   ui.always.onclick = async () => {
     if (host.dataset.alwaysOn === "true") {
       await chrome.runtime.sendMessage({ type: "set-always-on", url: location.href, enabled: false });

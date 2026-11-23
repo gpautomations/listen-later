@@ -23,8 +23,18 @@
     "storage",
     "activeTab",
     "scripting",
-    "contextMenus"
+    "contextMenus",
+    "downloads"
   ],
+  "optional_permissions": [
+    "identity"
+  ],
+  "oauth2": {
+    "client_id": "REPLACE_ME.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/drive.file"
+    ]
+  },
   "host_permissions": [
     "https://huggingface.co/*",
     "https://*.hf.co/*",

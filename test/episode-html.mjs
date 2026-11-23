@@ -35,9 +35,27 @@ if (!html.includes("a&lt;b&gt; &amp; &quot;c&quot;")) fail("word not escaped");
 if (!html.includes("https://example.com/a?b=1&amp;c=2")) fail("url not escaped");
 if (!html.includes('data-s="0.000"') || !html.includes('data-e="0.420"')) fail("timings");
 if (!html.includes(b64)) fail("audio missing");
-if (!html.includes("audio/wav")) fail("wav mime");
+if (!html.includes('data-mime="audio/wav"')) fail("wav mime");
 if (html.includes("—")) fail("em dash in episode html");
 if (/src\s*=\s*["']https?:/i.test(html)) fail("remote resource");
+const picture = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const withPicture = buildEpisodeHtml({
+  title: "With a picture",
+  sourceUrl: "https://example.com/a",
+  parts: [
+    { type: "words", words: [{ text: "See", start: 0, end: 0.2 }] },
+    { type: "image", src: picture, alt: 'red "square"' },
+    { type: "image", src: "https://evil.example/track.png", alt: "nope" },
+  ],
+  wavBase64: b64,
+  voiceLabel: "Heart",
+  durationSec: 0.2,
+});
+if (!withPicture.includes(`src="${picture}"`)) fail("picture missing");
+if (!withPicture.includes("red &quot;square&quot;")) fail("alt not escaped");
+if (withPicture.includes("evil.example")) fail("remote picture kept");
+if (!withPicture.includes("Pictures from the article are inside this file too.")) fail("picture note missing");
+if (/src\s*=\s*["']https?:/i.test(withPicture)) fail("remote picture src");
 const jsUrl = buildEpisodeHtml({ title: "x", sourceUrl: "javascript:alert(1)", blocks: [], wavBase64: "", voiceLabel: "v", durationSec: 0 });
 if (jsUrl.includes('href="javascript:')) fail("javascript url linked");
 if (episodeFilename("Hello, World!") !== "listen-later-Hello-World.html") fail("filename " + episodeFilename("Hello, World!"));

@@ -29,13 +29,14 @@ const common = {
 };
 const empty = "./src/lib/empty.js";
 await esbuild.build({ ...common, entryPoints: ["src/content.src.js"], outfile: `${out}/content.js`, format: "iife" });
+await esbuild.build({ ...common, entryPoints: ["src/drive.js"], outfile: `${out}/drive.js`, format: "iife" });
 await esbuild.build({
   ...common, entryPoints: ["src/offscreen.src.js"], outfile: `${out}/offscreen.js`, format: "esm",
   // Node-only branches of transformers.js and the Emscripten eSpeak NG module are never taken in the browser.
   alias: { path: empty, "fs/promises": empty, fs: empty, sharp: empty, "onnxruntime-node": empty, module: empty, url: empty, crypto: empty },
 });
 
-for (const f of ["background.js", "offscreen.html", "content.css", "options.html", "options.js", "grant.html", "grant.js"]) {
+for (const f of ["background.js", "offscreen.html", "content.css", "options.html", "options.js", "grant.html", "grant.js", "drive.html"]) {
   let s = fs.readFileSync(`src/${f}`, "utf8");
   if (defaultServer && (f === "background.js" || f === "options.js")) s = s.replace('const DEFAULT_SERVER = "";', `const DEFAULT_SERVER = ${JSON.stringify(defaultServer)};`);
   if (defaultServer && f === "options.html") s = s.replace('placeholder="http://my-computer.local:7778"', `placeholder="${defaultServer}"`);
