@@ -8,6 +8,7 @@
 // local.config.json is optional and never committed (see .gitignore / local.config.example.json):
 //   { "defaultServer": "http://my-computer.local:7778", "serverName": "your home server" }
 // It pre-fills the "Send to my phone" server and grants host access to it in the manifest.
+// EXTRA_HOST_PERMISSIONS (comma-separated match patterns) is for local tests only. STORE=1 ignores it.
 import * as esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
@@ -34,7 +35,7 @@ await esbuild.build({
   alias: { path: empty, "fs/promises": empty, fs: empty, sharp: empty, "onnxruntime-node": empty, module: empty, url: empty, crypto: empty },
 });
 
-for (const f of ["background.js", "offscreen.html", "content.css", "options.html", "options.js"]) {
+for (const f of ["background.js", "offscreen.html", "content.css", "options.html", "options.js", "grant.html", "grant.js"]) {
   let s = fs.readFileSync(`src/${f}`, "utf8");
   if (defaultServer && (f === "background.js" || f === "options.js")) s = s.replace('const DEFAULT_SERVER = "";', `const DEFAULT_SERVER = ${JSON.stringify(defaultServer)};`);
   if (defaultServer && f === "options.html") s = s.replace('placeholder="http://my-computer.local:7778"', `placeholder="${defaultServer}"`);
@@ -44,6 +45,11 @@ const manifest = JSON.parse(fs.readFileSync("src/manifest.json", "utf8"));
 if (defaultServer) {
   const u = new URL(defaultServer);
   manifest.host_permissions.push(`${u.protocol}//${u.hostname.toLowerCase()}/*`); // match patterns cover all ports
+}
+if (!STORE && process.env.EXTRA_HOST_PERMISSIONS) {
+  for (const pattern of process.env.EXTRA_HOST_PERMISSIONS.split(",").map((s) => s.trim()).filter(Boolean)) {
+    if (!manifest.host_permissions.includes(pattern)) manifest.host_permissions.push(pattern);
+  }
 }
 fs.writeFileSync(`${out}/manifest.json`, JSON.stringify(manifest, null, 2) + "\n");
 fs.cpSync("src/icons", `${out}/icons`, { recursive: true });

@@ -1,8 +1,10 @@
 import { chromium } from "playwright";
 import path from "node:path";
+import { extensionContextOptions } from "./browser.mjs";
 const EXT = path.resolve("dist");
-const ctx = await chromium.launchPersistentContext(path.resolve("test/.profile-gpu"), { channel: "chromium", headless: true,
-  args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-angle=swiftshader", "--use-webgpu-adapter=swiftshader", `--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`] });
+const ctx = await chromium.launchPersistentContext(path.resolve("test/.profile-gpu"), extensionContextOptions(EXT, {
+  extraArgs: ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-angle=swiftshader", "--use-webgpu-adapter=swiftshader"],
+}));
 const sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker"));
 const r = await sw.evaluate(async () => {
   await chrome.offscreen.createDocument({ url: "offscreen.html", reasons: ["WORKERS"], justification: "probe" });

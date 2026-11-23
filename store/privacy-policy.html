@@ -31,12 +31,12 @@
     <div class="logo" aria-hidden="true"><div><span style="height:12px"></span><span style="height:20px"></span><span style="height:15px"></span></div></div>
     <h1>Listen Later: Privacy Policy</h1>
   </header>
-  <p class="meta">Publisher: Growth Process Automation &middot; Last updated: November 21, 2026 &middot; Applies to the Listen Later browser extension, version 0.2.0 and later</p>
+  <p class="meta">Publisher: Growth Process Automation &middot; Last updated: November 23, 2026 &middot; Applies to the Listen Later browser extension, version 0.2.0 and later</p>
 
-  <p class="summary"><strong>In short:</strong> We don't collect any data. The voice runs on your own computer, and the articles you listen to stay there. The one exception is the optional "Send to my phone" feature, which sends an article only to a server address you set up yourself.</p>
+  <p class="summary"><strong>In short:</strong> We don't collect any data. The voice runs on your own computer, and the articles you listen to stay there. Listen Later does not run on a page until you turn it on. The one exception that sends an article anywhere is the optional "Send to my phone" feature, which sends it only to a server address you set up yourself. Save episode writes a file on your computer. We never receive that file.</p>
 
   <h2>What Listen Later does</h2>
-  <p>Listen Later reads the article on the web page you're viewing aloud and highlights each word on that page as it's spoken. It uses an open-source text-to-speech model (Kokoro) that runs inside your browser.</p>
+  <p>When you turn Listen Later on for a page, it reads the article there aloud and highlights each word as it's spoken. It uses an open-source text-to-speech model (Kokoro) that runs inside your browser. It does not read pages you have not turned it on for. If you choose "Always show on this site" for a site, it can show its player on later visits to that site.</p>
 
   <h2>Data we collect</h2>
   <p>None. Growth Process Automation doesn't operate any server that receives data from the extension. We have no accounts, analytics, tracking, advertising or cookies, and we don't collect, store, sell or share personal information or browsing history.</p>
@@ -46,8 +46,9 @@
   <ul>
     <li><strong>Article text.</strong> To read a page aloud, the extension reads that page's text in your browser. The text is processed locally and isn't sent to us or to anyone else.</li>
     <li><strong>Speech.</strong> Audio is generated on your computer by the voice model, using your graphics card (WebGPU) when available or your processor otherwise. No audio is uploaded.</li>
-    <li><strong>Settings.</strong> Your voice, speed, quality and optional server address are saved locally in your browser's extension storage (<code>chrome.storage.local</code>). They aren't synced or sent anywhere by the extension.</li>
+    <li><strong>Settings.</strong> Your voice, speed, quality, optional server address and the sites you asked to always show are saved locally in your browser's extension storage (<code>chrome.storage.local</code>). They aren't synced or sent anywhere by the extension.</li>
     <li><strong>Voice model cache.</strong> The downloaded model files are cached in your browser so they only download once. You can remove them by uninstalling the extension.</li>
+    <li><strong>Saved episodes.</strong> If you press Save episode, Listen Later builds an HTML file on your computer that contains the article text, the spoken audio and the word timings. Your browser downloads that file. We don't receive it. It is uploaded only if you put it in a cloud folder yourself, for example with the Google Drive or Dropbox app on your computer.</li>
   </ul>
 
   <h2>Model files downloaded from Hugging Face</h2>
@@ -63,17 +64,18 @@
     <li>We recommend using a secure (<code>https://</code>) address for any server that isn't on your own computer or home network.</li>
   </ul>
 
-  <h2>Share links</h2>
-  <p>"Share listen link" copies the original article's web address with <code>#listen-later</code> added to the end. Browsers don't send the part after <code>#</code> to the website, and we don't host or track these links. When someone who has Listen Later opens one, their extension shows the player.</p>
+  <h2>Saved episodes</h2>
+  <p>Save episode downloads one HTML file that contains the article text, word timings and audio. Open that file later and it still plays, including offline. We don't host it, and we don't see it. A link inside the file points at the original article so you can get back to the page. The audio and the highlighting script are stored in the file itself.</p>
 
   <h2>Deleting your data</h2>
-  <p>Everything Listen Later keeps is on your own device. Your settings are stored in your browser's local extension storage, and the downloaded voice model is stored in your browser's cache. Uninstalling the extension removes both. You can remove the Send to my phone server address at any time in Options (Remove server). We hold no personal data about you, so there's nothing for us to export or delete. Questions: <a href="mailto:scott@gpautomations.com">scott@gpautomations.com</a>.</p>
+  <p>Everything Listen Later keeps is on your own device. Your settings are stored in your browser's local extension storage, and the downloaded voice model is stored in your browser's cache. Uninstalling the extension removes both. You can remove the Send to my phone server address at any time in Options (Remove server). You can remove an always-show site in Options, which also removes the extension's access to that site. Saved episode files are ordinary files in your downloads folder, or wherever you moved them. Delete them the same way you delete any other file. We hold no personal data about you, so there's nothing for us to export or delete. Questions: <a href="mailto:scott@gpautomations.com">scott@gpautomations.com</a>.</p>
 
   <h2>Permissions</h2>
   <ul>
-    <li><strong>Access to the pages you read:</strong> so the extension can find the article and highlight words in place. It doesn't read aloud or change anything on a page until you press play, apart from showing its small player.</li>
+    <li><strong>The page you turn on:</strong> Listen Later does not read or change pages by itself. It runs only after you click the toolbar icon, choose "Listen to this page" in the right-click menu, or use the keyboard shortcut. It can then find the article and highlight words on that page.</li>
+    <li><strong>A site you pin:</strong> If you turn on "Always show on this site", Chrome asks you to allow that site. Only then can the player appear there on later visits. You can remove it in Options.</li>
     <li><strong>Hugging Face access:</strong> to download the voice model files.</li>
-    <li><strong>Offscreen document and storage:</strong> to run the voice model and remember your settings.</li>
+    <li><strong>Offscreen document and storage:</strong> to run the voice model and remember your settings, including sites you pin.</li>
     <li><strong>Optional access to your server:</strong> requested only when you save a server address for Send to my phone.</li>
   </ul>
 

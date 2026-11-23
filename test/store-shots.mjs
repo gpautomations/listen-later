@@ -2,6 +2,8 @@
 import { chromium } from "playwright";
 import http from "node:http";
 import path from "node:path";
+import { activateTab } from "./activate.mjs";
+import { extensionContextOptions } from "./browser.mjs";
 // Server host the build was configured with (local.config.json "defaultServer"); mapped to a mock on 127.0.0.1.
 const TEST_HOST = process.env.LL_TEST_HOST || "my-computer.local";
 const EXT = path.resolve(process.env.EXT || "dist");
@@ -9,8 +11,11 @@ const OUT = path.resolve("store/screenshots");
 const URL = "https://en.wikipedia.org/wiki/Steam_engine";
 const server = http.createServer((req, res) => { let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => { res.writeHead(202, { "Content-Type": "application/json" }); res.end(JSON.stringify({ id: "x", status: "queued" })); }); });
 await new Promise((r) => server.listen(7778, "127.0.0.1", r));
-const ctx = await chromium.launchPersistentContext(path.resolve("test/.p-high"), { channel: "chromium", headless: true, viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1,
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, "--autoplay-policy=no-user-gesture-required", `--host-resolver-rules=MAP ${TEST_HOST.toLowerCase()} 127.0.0.1`] });
+const ctx = await chromium.launchPersistentContext(path.resolve("test/.p-high"), extensionContextOptions(EXT, {
+  viewport: { width: 1280, height: 800 },
+  deviceScaleFactor: 1,
+  extraArgs: [`--host-resolver-rules=MAP ${TEST_HOST.toLowerCase()} 127.0.0.1`],
+}));
 await ctx.grantPermissions(["clipboard-read", "clipboard-write"]);
 const sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker"));
 await sw.evaluate((h) => chrome.storage.local.set({ quality: "high", voice: "af_heart", speed: 1, serverUrl: `http://${h}:7778` }), TEST_HOST);
@@ -21,6 +26,7 @@ const declutter = (pg) => pg.evaluate(() => {
 const waitWord = (pg) => pg.waitForFunction(() => { const d = document.querySelector("#listen-later-host").dataset; return d.state === "playing" && document.querySelector(".ll-word"); }, null, { timeout: 60000 });
 const page = await ctx.newPage();
 await page.goto(URL, { waitUntil: "domcontentloaded" });
+await activateTab(sw, page);
 const host = page.locator("#listen-later-host");
 await page.waitForFunction(() => document.querySelector("#listen-later-host")?.dataset.detected, null, { timeout: 30000 });
 await page.waitForTimeout(2000); await declutter(page);
@@ -39,13 +45,7 @@ await host.locator("button.gear").click();
 await host.locator("button.phone").click();
 await page.waitForFunction(() => /^ok: Sent/.test(document.querySelector("#listen-later-host").dataset.toast || ""), null, { timeout: 30000 });
 await page.screenshot({ path: `${OUT}/3-send-to-my-phone.png` });
-await host.locator("button.play").click();
-await page.waitForTimeout(6500);
-await host.locator("button.share").click(); await page.waitForTimeout(500);
-const link = (await host.getAttribute("data-share-text")).split("\n").pop();
-const p2 = await ctx.newPage();
-await p2.goto(link, { waitUntil: "domcontentloaded" });
-await p2.waitForFunction(() => document.querySelector("#listen-later-host")?.dataset.invite, null, { timeout: 30000 });
-await p2.waitForTimeout(2500); await declutter(p2);
-await p2.screenshot({ path: `${OUT}/4-shared-listen-link.png` });
+await host.locator("button.gear").click();
+await page.waitForTimeout(400);
+await page.screenshot({ path: `${OUT}/4-always-on-this-site.png` });
 await ctx.close(); server.close();

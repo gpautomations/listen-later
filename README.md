@@ -15,8 +15,9 @@ components and their licenses are listed in [`THIRD_PARTY.md`](THIRD_PARTY.md).
    (or build it, below) and unzip it into a folder.
 2. In Chrome go to `chrome://extensions`, turn on **Developer mode** (top-right).
 3. Click **Load unpacked** and pick that folder.
-4. Open an article, e.g. https://www.notion.com/blog/steam-steel-and-infinite-minds-ai. The player shows up bottom-right.
-   (If it doesn't, click the Listen Later toolbar icon to show it.)
+4. Open an article, e.g. https://www.notion.com/blog/steam-steel-and-infinite-minds-ai. Nothing from Listen Later runs yet.
+   Click the Listen Later toolbar icon (or right-click the page and choose **Listen to this page**, or press `Alt+Shift+L`).
+   The player shows up bottom-right.
 5. Press play. The first time, the voice model downloads once (326 MB in High quality, 92 MB in Fast).
    After that, it starts in about 3 seconds.
 6. Optional: right-click the toolbar icon > Options to enter your own Listen Later server for "Send to my phone"
@@ -25,7 +26,8 @@ components and their licenses are listed in [`THIRD_PARTY.md`](THIRD_PARTY.md).
 Works in Chrome/Edge/Brave 116+.
 
 ## Using it
-- **Play / pause**: big yellow button, or `Alt+Shift+P`.
+- **Turn it on**: toolbar icon, right-click **Listen to this page**, or `Alt+Shift+L`. Click the icon again to hide the player. Listen Later does not load on a page until you do this. In Options you can turn on **Always show on this site** for a site you name; Chrome asks before that site is allowed.
+- **Play / pause**: big yellow button, or `Alt+Shift+P` while the player is open.
 - **Skip**: next/previous sentence buttons (previous restarts the sentence if you're more than 1.5 s in).
 - **Jump**: click any word in the article (outside links) to start reading from that sentence.
 - **Speed** (in the gear menu): 0.8× to 2× (the voice is regenerated at that speed, so pitch stays natural).
@@ -37,15 +39,17 @@ Works in Chrome/Edge/Brave 116+.
   headings, to your Listen Later server's `POST /api/ingest`. It shows up in your private podcast feed (`/feed.xml`) a few
   minutes later. A toast confirms success or explains the failure (for example, not on the home network). With no server
   set, the button asks you to add one in Options; nothing is sent until you do.
-- **Share listen link** (link icon): copies a short share text plus the ORIGINAL article URL with `#listen-later` added.
-  The site's server never sees the fragment and nothing is hosted. When someone with the extension opens that link, the
-  player appears with a "Listen" button and the voice model warms up in the background. People without the extension
-  simply get the article.
+- **Save episode** (download icon): builds one HTML file on your computer with the article text, word timings and the
+  audio embedded (16-bit WAV, about 2.9 MB per minute). Open it anytime, including offline. Chrome saves it to your
+  downloads folder. Point that folder at Google Drive or Dropbox, or turn on "Ask where to save each file", if you
+  want it in storage you already own. Nothing is uploaded. The optional phone server is not required.
 - **Auto-scroll** follows the voice. Scroll yourself and it stops following; tap **Follow** to snap back.
 - **×** hides the player (toolbar icon brings it back).
 
 ## How it works
-- `content.js`: runs Mozilla Readability on a *clone* of the page to identify the article text, then matches those
+- `content.js` is not declared in `content_scripts`. `background.js` injects it with `chrome.scripting.executeScript`
+  only after the toolbar, context menu, or keyboard shortcut (temporary `activeTab` access), or on sites the user
+  pinned with "Always show on this site" (a host permission Chrome asks for, plus a dynamic content script). It runs Mozilla Readability on a *clone* of the page to identify the article text, then matches those
   paragraphs/headings/list items back to the live page. Only text nodes inside those blocks get wrapped in
   `<span class="ll-w">` (links, images, figures, footnote markers and buttons are left alone). Wrapping happens when
   you first press play. Sentences are split per block. The player UI lives in a Shadow DOM so the page CSS can't break it.
@@ -75,7 +79,7 @@ Works in Chrome/Edge/Brave 116+.
      16-bit. v2 uses a 24 kHz context and Float32.
 - **Quality setting** (High / Fast), High by default.
 - **Send to my phone** + Options page (server URL, test connection, quality).
-- **Share listen link** + `#listen-later` invite with one-click play.
+- **Share listen link** + `#listen-later` invite with one-click play. (Removed after 0.2.0: it only copied the article URL. Save episode replaces it. The version number is still 0.2.0 until the next store upload.)
 - Settings moved into a gear popover to keep the pill small.
 
 ## Measured on the build box (headless Chromium, WASM, 7 threads, no GPU), Notion "Steam, Steel, and Infinite Minds"
@@ -101,7 +105,8 @@ clipboard, and opening it shows the invite and starts audio in 1.2 s with one cl
 - Live `notion.com/a-new-shape-for-work` currently returns 404, so it was tested on the Wayback Machine copy of the same page.
 - First play downloads the model (326 MB High, 92 MB Fast). Slow connections see a "Downloading voice NN%" status.
 - On slower CPUs without WebGPU, generation may fall behind real time; the player shows "Buffering…" between sentences.
-- Send to my phone only works where the browser can reach your server (same home network, or a VPN such as Tailscale).
+- Send to my phone only works where the browser can reach your server (same home network, or a VPN such as Tailscale). You do not need that server. Save episode keeps the audio in a file on your computer.
+- Save episode uses the on-device Kokoro voice, so the first save may download the model (326 MB High, 92 MB Fast). Web Speech API audio cannot be recorded, so it is not used. A 10 minute article is on the order of 30 MB of WAV inside the HTML file. Google Drive and Dropbox upload from the extension is not built: both need an OAuth client id, and this repo does not ship one.
 - English only. Numbers, currencies and years are normalized; unusual abbreviations may be read literally.
 - Pages that re-render their article text after load (some single-page apps) can drop the word spans; reload and press play again.
 - Paywalled or login-only text is only read if it's visible in your browser. Iframes and PDFs aren't supported.
@@ -131,7 +136,8 @@ needs no C toolchain. To rebuild it from the vendored, checksummed eSpeak NG 1.5
 
 Source layout:
 - `src/`: `manifest.json`, `background.js`, `content.src.js`, `content.css`, `offscreen.html`, `offscreen.src.js`,
-  `options.html`, `options.js`, `lib/phonemize.js`, `vendor/espeak-ng/` (eSpeak NG build + `phonemizer.mjs` wrapper).
+  `options.html`, `options.js`, `grant.html` (confirm "always show on this site"), `lib/episode.mjs` (saved read-along file),
+  `lib/phonemize.js`, `vendor/espeak-ng/` (eSpeak NG build + `phonemizer.mjs` wrapper).
 - `third_party/espeak-ng/`: eSpeak NG 1.52.0 source tarball, `SHA256SUMS`, patch, `build.sh`.
 - `third_party/phonemizer.js/`: phonemizer.js source pinned at commit `6835144` (Apache-2.0), which our wrapper adapts.
 - `store/`: Chrome Web Store listing draft, privacy policy, icon, promo tile, screenshots.

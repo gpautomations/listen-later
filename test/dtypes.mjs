@@ -1,10 +1,10 @@
 // Robustness + speed per dtype on WASM: count silent/NaN sentences.
 import { chromium } from "playwright";
 import path from "node:path";
+import { extensionContextOptions } from "./browser.mjs";
 const EXT = path.resolve("dist");
 const dtypes = (process.argv[2] || "fp16,fp32").split(",");
-const ctx = await chromium.launchPersistentContext(path.resolve("test/.profile"), { channel: "chromium", headless: true,
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`] });
+const ctx = await chromium.launchPersistentContext(path.resolve("test/.profile"), extensionContextOptions(EXT));
 const sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker"));
 const text = `Every era is shaped by its miracle material. Steel forged the Gilded Age. Semiconductors switched on the Digital Age. Now AI has arrived as infinite minds. If history teaches us anything, those who master the material define the era. In the 1850s, Andrew Carnegie was a telegraph boy running messages through the muddy streets of Pittsburgh. Sixty percent of Americans were farmers. Within two generations, Carnegie and his peers forged the modern world. Horses gave way to railroads, candlelight to electricity, iron to steel. Since then, work shifted from factories to offices. Today I run a software company in San Francisco, building tools for millions of knowledge workers. I don't have all the answers on what comes next. The first glimpses can be found with the high priests of knowledge work: programmers. He's become a manager of infinite minds. Hello. Yes! It works.`;
 const sents = text.match(/[^.!?]+[.!?]/g).map((s) => s.trim());

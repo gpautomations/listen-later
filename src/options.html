@@ -7,13 +7,27 @@
   input[type=url], select { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; box-sizing: border-box; }
   button { margin-top: 12px; padding: 8px 16px; border: 0; border-radius: 8px; background: #111; color: #fff; font-size: 14px; cursor: pointer; }
   button.secondary { background: #eee; color: #111; }
+  button.inline { margin: 0 0 0 8px; padding: 4px 10px; }
   .note { color: #666; font-size: 13px; }
+  ul { padding-left: 18px; }
+  li { margin: 6px 0; }
   a { color: #0b57d0; }
   .about { margin-top: 32px; padding-top: 8px; border-top: 1px solid #eee; }
   #msg { margin-top: 12px; font-size: 13px; }
 </style></head>
 <body>
   <h1>Listen Later</h1>
+  <h2>When it runs</h2>
+  <p class="note">Listen Later stays off until you click its toolbar icon, right-click the page and choose "Listen to this page", or press Alt+Shift+L (Option+Shift+L on a Mac). You can change that shortcut at chrome://extensions/shortcuts. While the player is open, Alt+Shift+P plays or pauses.</p>
+  <p class="note">Add a site below if you want the player to show by itself whenever you visit it. Chrome will ask to allow that site. Other sites stay off.</p>
+  <label for="site">Site</label>
+  <input id="site" type="url" placeholder="https://en.wikipedia.org/wiki/Steam_engine">
+  <div>
+    <button id="add-site">Always show on this site</button>
+  </div>
+  <ul id="sites"></ul>
+  <h2>Save episode</h2>
+  <p class="note">The download button on the player builds one HTML file with the article, word timings and audio inside, using the on-device voice. Chrome saves it to your downloads folder. Point that folder at Google Drive or Dropbox, or turn on "Ask where to save each file" in Chrome, and the file stays in storage you already own. Listen Later does not upload it. A long article is a few megabytes per minute of audio.</p>
   <h2>Send to my phone</h2>
   <p class="note">Optional. The phone button sends the article's title, link and text to <b>your own</b> Listen Later server, which turns it into a podcast episode in your private feed. Nothing is sent until you enter an address here, and it is only ever sent to that address. Chrome will ask you to allow access to it when you press Save.</p>
   <label for="server">Server URL</label>

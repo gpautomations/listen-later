@@ -2,9 +2,9 @@
 import { chromium } from "playwright";
 import path from "node:path";
 import fs from "node:fs";
+import { extensionContextOptions } from "./browser.mjs";
 const EXT = path.resolve(process.env.EXT || "dist");
-const ctx = await chromium.launchPersistentContext(path.resolve("test/.profile"), { channel: "chromium", headless: true,
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`] });
+const ctx = await chromium.launchPersistentContext(path.resolve("test/.profile"), extensionContextOptions(EXT));
 const sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker"));
 const sentences = [
   "Every era is shaped by its miracle material.",

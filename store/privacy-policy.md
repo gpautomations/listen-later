@@ -1,13 +1,13 @@
 <!-- Source of truth: privacy-policy.html (published at https://quiet-cedar-ulkb.agentpub.io/) -->
 # Listen Later: Privacy Policy
 
-Publisher: Growth Process Automation · Last updated: November 21, 2026 · Applies to the Listen Later browser extension, version 0.2.0 and later
+Publisher: Growth Process Automation · Last updated: November 23, 2026 · Applies to the Listen Later browser extension, version 0.2.0 and later
 
-**In short:** We don't collect any data. The voice runs on your own computer, and the articles you listen to stay there. The one exception is the optional "Send to my phone" feature, which sends an article only to a server address you set up yourself.
+**In short:** We don't collect any data. The voice runs on your own computer, and the articles you listen to stay there. Listen Later does not run on a page until you turn it on. The one exception that sends an article anywhere is the optional "Send to my phone" feature, which sends it only to a server address you set up yourself. Save episode writes a file on your computer. We never receive that file.
 
 ## What Listen Later does
 
-Listen Later reads the article on the web page you're viewing aloud and highlights each word on that page as it's spoken. It uses an open-source text-to-speech model (Kokoro) that runs inside your browser.
+When you turn Listen Later on for a page, it reads the article there aloud and highlights each word as it's spoken. It uses an open-source text-to-speech model (Kokoro) that runs inside your browser. It does not read pages you have not turned it on for. If you choose "Always show on this site" for a site, it can show its player on later visits to that site.
 
 ## Data we collect
 
@@ -19,8 +19,9 @@ Our handling of user data complies with the [Chrome Web Store User Data Policy](
 
 - **Article text.** To read a page aloud, the extension reads that page's text in your browser. The text is processed locally and isn't sent to us or to anyone else.
 - **Speech.** Audio is generated on your computer by the voice model, using your graphics card (WebGPU) when available or your processor otherwise. No audio is uploaded.
-- **Settings.** Your voice, speed, quality and optional server address are saved locally in your browser's extension storage (`chrome.storage.local`). They aren't synced or sent anywhere by the extension.
+- **Settings.** Your voice, speed, quality, optional server address and the sites you asked to always show are saved locally in your browser's extension storage (`chrome.storage.local`). They aren't synced or sent anywhere by the extension.
 - **Voice model cache.** The downloaded model files are cached in your browser so they only download once. You can remove them by uninstalling the extension.
+- **Saved episodes.** If you press Save episode, Listen Later builds an HTML file on your computer that contains the article text, the spoken audio and the word timings. Your browser downloads that file. We don't receive it. It is uploaded only if you put it in a cloud folder yourself, for example with the Google Drive or Dropbox app on your computer.
 
 ## Model files downloaded from Hugging Face
 
@@ -36,19 +37,20 @@ Send to my phone is off until you set it up. If you enter a server address in th
 - You can remove the server address at any time in Options, which also removes the extension's access to it.
 - We recommend using a secure (`https://`) address for any server that isn't on your own computer or home network.
 
-## Share links
+## Saved episodes
 
-"Share listen link" copies the original article's web address with `#listen-later` added to the end. Browsers don't send the part after `#` to the website, and we don't host or track these links. When someone who has Listen Later opens one, their extension shows the player.
+Save episode downloads one HTML file that contains the article text, word timings and audio. Open that file later and it still plays, including offline. We don't host it, and we don't see it. A link inside the file points at the original article so you can get back to the page. The audio and the highlighting script are stored in the file itself.
 
 ## Deleting your data
 
-Everything Listen Later keeps is on your own device. Your settings are stored in your browser's local extension storage, and the downloaded voice model is stored in your browser's cache. Uninstalling the extension removes both. You can remove the Send to my phone server address at any time in Options (Remove server). We hold no personal data about you, so there's nothing for us to export or delete. Questions: [scott@gpautomations.com](mailto:scott@gpautomations.com).
+Everything Listen Later keeps is on your own device. Your settings are stored in your browser's local extension storage, and the downloaded voice model is stored in your browser's cache. Uninstalling the extension removes both. You can remove the Send to my phone server address at any time in Options (Remove server). You can remove an always-show site in Options, which also removes the extension's access to that site. Saved episode files are ordinary files in your downloads folder, or wherever you moved them. Delete them the same way you delete any other file. We hold no personal data about you, so there's nothing for us to export or delete. Questions: [scott@gpautomations.com](mailto:scott@gpautomations.com).
 
 ## Permissions
 
-- **Access to the pages you read:** so the extension can find the article and highlight words in place. It doesn't read aloud or change anything on a page until you press play, apart from showing its small player.
+- **The page you turn on:** Listen Later does not read or change pages by itself. It runs only after you click the toolbar icon, choose "Listen to this page" in the right-click menu, or use the keyboard shortcut. It can then find the article and highlight words on that page.
+- **A site you pin:** If you turn on "Always show on this site", Chrome asks you to allow that site. Only then can the player appear there on later visits. You can remove it in Options.
 - **Hugging Face access:** to download the voice model files.
-- **Offscreen document and storage:** to run the voice model and remember your settings.
+- **Offscreen document and storage:** to run the voice model and remember your settings, including sites you pin.
 - **Optional access to your server:** requested only when you save a server address for Send to my phone.
 
 ## Children

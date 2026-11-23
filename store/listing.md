@@ -25,15 +25,15 @@ Listen Later reads articles aloud and highlights every word as it's spoken, righ
 The voice runs entirely in your browser. Listen Later uses Kokoro, an open-source neural voice, on your own computer (WebGPU when available, otherwise WebAssembly). There's no account, no subscription and no server reading your pages. The only download is the voice model itself, fetched once from Hugging Face and cached.
 
 What you can do:
-• Press play on any article. A small player appears in the corner, and the current sentence and word light up as they're read.
+• Click the toolbar icon (or right-click the page, or press Alt+Shift+L) and then press play. A small player appears in the corner, and the current sentence and word light up as they're read. Nothing runs on a page until you do this. You can also pin a site so the player shows there by itself.
 • Click any sentence to jump there.
 • Pick a speed from 0.8x to 2x, and choose from seven natural voices (American and British, female and male).
 • Choose High quality (the full voice model) or Fast (a smaller download).
 • Scroll freely. The page follows the voice until you scroll, then a Follow button brings you back.
-• Share a listen link. It's the original article's link, so the publisher keeps the reader. Friends who have Listen Later get the player ready to go.
-• Send to my phone (optional). If you run the free, open-source Listen Later server on your own computer, one tap turns the article into an episode in your private podcast feed.
+• Save episode. One button downloads a single HTML file with the article, word timings and audio inside. Open it anytime, including offline. Put it in a Google Drive or Dropbox folder if you want it on your other devices. Listen Later does not host it.
+• Send to my phone (optional). If you run the free, open-source Listen Later server on your own computer, one tap turns the article into an episode in your private podcast feed. You do not need that server to save an episode.
 
-Privacy, in one line: the article text never leaves your computer, except when you choose "Send to my phone", which sends it only to the server address you set.
+Privacy, in one line: the article text never leaves your computer, except when you choose "Send to my phone", which sends it only to the server address you set. Save episode writes a file on your computer and does not upload it.
 
 Works best on articles, blogs, essays and documentation. English voices only for now.
 
@@ -43,12 +43,16 @@ Listen Later is free software under GPL-3.0-or-later. Source: https://github.com
 Read the article on the current page aloud with an on-device voice and highlight each word in place.
 
 ## Permission justifications (for the review form)
-- Content script on all http/https pages: finds the article on the page the user is reading and highlights words in place. Apart from showing its small player, it does nothing until the user presses play. (Chrome will show the install warning "Read and change all your data on all websites" because of this.)
+- No content script on all pages. The player is injected with `activeTab` + `scripting` only after a toolbar click, the "Listen to this page" context menu item, or the Alt+Shift+L command. That removes the install-time "Read and change all your data on all websites" warning.
+- activeTab: temporary access to the tab the user just invoked the extension on, so the article can be found and words highlighted.
+- scripting: injects the packaged content script and CSS into that tab on demand.
+- contextMenus: adds "Listen to this page" to the page menu.
 - offscreen: runs the voice model in an offscreen document (MV3 service workers can't use WebGPU).
-- storage: remembers voice, speed, quality and the optional server address.
+- storage: remembers voice, speed, quality, the optional server address and sites the user pinned.
 - Host access to huggingface.co / hf.co: one-time download of the open-source voice model files.
-- Optional host access (`optional_host_permissions`, requested at runtime only for the one server origin the user saves in Options): lets "Send to my phone" post to the user's own Listen Later server. The store build has no default server.
+- Optional host access (`optional_host_permissions`, not granted at install): requested only when the user saves a server address for Send to my phone, or turns on "Always show on this site" for one site. The store build has no default server and no pinned sites.
 - Remote code: none. All JavaScript and WebAssembly ship inside the package. Only model weights (data) are downloaded.
+- Not uploaded from this branch. Version stays 0.2.0. The package already in Chrome Web Store review is the previous behavior. Do not publish this build as part of that review.
 
 ## Assets in this folder
 - icon-128.png (128x128 store icon)
@@ -56,7 +60,7 @@ Read the article on the current page aloud with an on-device voice and highlight
 - screenshots/1-read-along-on-the-original-page.png (1280x800)
 - screenshots/2-voices-speed-quality.png (1280x800)
 - screenshots/3-send-to-my-phone.png (1280x800)
-- screenshots/4-shared-listen-link.png (1280x800)
+- screenshots/4-shared-listen-link.png (1280x800) OUTDATED: the share-link button was removed. Reshoot before the next store upload.
 Screenshots use the Wikipedia article "Steam engine" (CC BY-SA 4.0), not Notion content. Credit line for the listing if needed: "Article: Wikipedia, CC BY-SA 4.0."
 
 ## Privacy practices tab (answers)

@@ -16,6 +16,7 @@
     "build:store": "STORE=1 node build.mjs",
     "build:all": "node build.mjs && STORE=1 node build.mjs",
     "package": "python3 scripts/package.py dist listen-later-extension.zip listen-later-extension && python3 scripts/package.py dist-store store/listen-later-store-0.2.0.zip",
+    "test": "node test/manifest-permissions.mjs && node test/episode-html.mjs",
     "build:espeak": "bash third_party/espeak-ng/build.sh"
   },
   "dependencies": {
