@@ -15,6 +15,14 @@ import path from "node:path";
 
 const STORE = process.env.STORE === "1";
 const out = STORE ? "dist-store" : "dist";
+const hostedBase = !STORE && process.env.HOSTED_BASE_URL ? process.env.HOSTED_BASE_URL.replace(/\/+$/, "") : "";
+if (hostedBase) {
+  const hostedUrl = new URL(hostedBase);
+  const localHost = hostedUrl.hostname === "localhost" || hostedUrl.hostname === "127.0.0.1";
+  if (hostedUrl.protocol !== "https:" && !(hostedUrl.protocol === "http:" && localHost)) {
+    throw new Error("HOSTED_BASE_URL must be https (localhost is allowed for tests)");
+  }
+}
 const local = !STORE && fs.existsSync("local.config.json") ? JSON.parse(fs.readFileSync("local.config.json", "utf8")) : {};
 const defaultServer = (local.defaultServer || "").replace(/\/+$/, "");
 if (defaultServer) new URL(defaultServer); // validate
@@ -25,10 +33,15 @@ fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(path.join(out, "ort"), { recursive: true });
 const common = {
   bundle: true, minify: true, legalComments: "linked", target: "chrome116", logLevel: "info",
-  define: { __SERVER_NAME__: JSON.stringify(serverName), __SERVER_LABEL__: JSON.stringify(serverLabel) },
+  define: {
+    __SERVER_NAME__: JSON.stringify(serverName),
+    __SERVER_LABEL__: JSON.stringify(serverLabel),
+    __HOSTED_BASE__: JSON.stringify(hostedBase),
+  },
 };
 const empty = "./src/lib/empty.js";
 await esbuild.build({ ...common, entryPoints: ["src/content.src.js"], outfile: `${out}/content.js`, format: "iife" });
+await esbuild.build({ ...common, entryPoints: ["src/hosted-options.js"], outfile: `${out}/hosted-options.js`, format: "iife" });
 await esbuild.build({
   ...common, entryPoints: ["src/offscreen.src.js"], outfile: `${out}/offscreen.js`, format: "esm",
   // Node-only branches of transformers.js and the Emscripten eSpeak NG module are never taken in the browser.

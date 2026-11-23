@@ -1,0 +1,6 @@
+{
+  "name": "listen-later-hosted",
+  "private": true,
+  "type": "module",
+  "description": "Private read-along links for Listen Later. Staging worker only."
+}

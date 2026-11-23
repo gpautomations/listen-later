@@ -2,6 +2,7 @@
 // Injected only after the user turns the page on (toolbar, menu, shortcut, or a site they pinned).
 import { Readability, isProbablyReaderable } from "@mozilla/readability";
 import { buildEpisodeHtml, bytesToBase64, concatFloat32, encodeWav, episodeFilename, float32FromBase64 } from "./lib/episode.mjs";
+import { attachHostedSave } from "./lib/hosted/player.mjs";
 
 (() => {
   if (window.__listenLater) return;
@@ -514,6 +515,7 @@ import { buildEpisodeHtml, bytesToBase64, concatFloat32, encodeWav, episodeFilen
   function setSaveLocked(locked) {
     S.saving = locked;
     ui.save.disabled = locked;
+    if (ui.hosted) ui.hosted.disabled = locked;
     ui.play.disabled = locked;
     ui.prev.disabled = locked;
     ui.next.disabled = locked;
@@ -584,6 +586,23 @@ import { buildEpisodeHtml, bytesToBase64, concatFloat32, encodeWav, episodeFilen
     }
   }
   ui.save.onclick = () => { saveEpisode(); };
+  attachHostedSave({
+    shadow,
+    ui,
+    getState: () => S,
+    send,
+    toast,
+    prepare,
+    pause,
+    esc,
+    setStatus,
+    setAttr,
+    setSaveLocked,
+    voices: VOICES,
+    title: () => norm(S.article?.title) || document.title || "Article",
+    sourceUrl: () => location.href.split("#")[0],
+    blockElements: () => S.article?.blocks || [],
+  });
   ui.always.onclick = async () => {
     if (host.dataset.alwaysOn === "true") {
       await chrome.runtime.sendMessage({ type: "set-always-on", url: location.href, enabled: false });

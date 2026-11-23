@@ -1,5 +1,8 @@
 # dependencies and build output
 node_modules/
+hosted/node_modules/
+hosted/.wrangler/
+hosted/.dev.vars
 dist/
 dist-store/
 *.zip

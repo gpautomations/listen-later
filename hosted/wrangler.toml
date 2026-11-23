@@ -1,0 +1,24 @@
+# Staging only. Do not point this file at production, a custom domain, or a public bucket.
+# Deploy only with CLOUDFLARE_DEPLOY_TOKEN (the generic CLOUDFLARE_API_TOKEN cannot publish Workers).
+name = "listen-later-hosted-staging"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+account_id = "4080369ab1011cfa56dbf9d5b96c885d"
+workers_dev = true
+
+[vars]
+ABUSE_EMAIL = "abuse@example.com"
+MAX_EPISODE_BYTES = "40000000"
+MAX_EPISODES = "25"
+MAX_ACCOUNT_BYTES = "250000000"
+UPLOADS_PER_HOUR = "8"
+MAX_IMAGES = "20"
+MAX_IMAGE_BYTES = "1500000"
+
+[limits]
+cpu_ms = 30000
+
+[[r2_buckets]]
+binding = "EPISODES"
+bucket_name = "listen-later-staging"
+preview_bucket_name = "listen-later-staging"

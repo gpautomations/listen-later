@@ -16,12 +16,14 @@
     "build:store": "STORE=1 node build.mjs",
     "build:all": "node build.mjs && STORE=1 node build.mjs",
     "package": "python3 scripts/package.py dist listen-later-extension.zip listen-later-extension && python3 scripts/package.py dist-store store/listen-later-store-0.2.0.zip",
-    "test": "node test/manifest-permissions.mjs && node test/episode-html.mjs",
+    "test": "node test/manifest-permissions.mjs && node test/episode-html.mjs && node test/hosted-client.mjs && node --test hosted/test/api.test.mjs",
     "build:espeak": "bash third_party/espeak-ng/build.sh"
   },
   "dependencies": {
     "@huggingface/transformers": "3.8.1",
-    "@mozilla/readability": "0.6.0"
+    "@mozilla/readability": "0.6.0",
+    "qrcode-generator": "1.4.4",
+    "webm-muxer": "5.1.4"
   },
   "devDependencies": {
     "esbuild": "0.28.2",
